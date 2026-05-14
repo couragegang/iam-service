@@ -1,0 +1,1112 @@
+openapi: 3.1.0
+info:
+  title: IAM Service API
+  version: 0.1.0
+  description: |
+    Аутентификация, организации, членство и RBAC. Префикс `/v1` может навешиваться API Gateway.
+servers:
+  - url: https://api.example.com/v1/iam
+    description: через gateway
+  - url: http://localhost:8080/v1/iam
+    description: локально
+tags:
+  - name: auth
+  - name: me
+  - name: organizations
+  - name: internal
+  - name: idp
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      security: []
+      summary: Регистрация по email и паролю
+      operationId: authRegister
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Пользователь создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokensResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /auth/login:
+    post:
+      tags: [auth]
+      security: []
+      summary: Вход по email и паролю
+      operationId: authLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Пара токенов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokensResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      security: []
+      summary: Обновление access по refresh (ротация refresh)
+      operationId: authRefresh
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokensResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      security: []
+      summary: Отзыв текущей refresh-сессии
+      operationId: authLogout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '204':
+          description: Сессия отозвана
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/forgot-password:
+    post:
+      tags: [auth]
+      security: []
+      summary: Запрос сброса пароля (событие в notification)
+      operationId: authForgotPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '202':
+          description: Запрос принят (без раскрытия наличия email)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedEmpty'
+
+  /auth/reset-password:
+    post:
+      tags: [auth]
+      security: []
+      summary: Сброс пароля по одноразовому токену
+      operationId: authResetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '204':
+          description: Пароль обновлён
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /auth/verify-email:
+    post:
+      tags: [auth]
+      security: []
+      summary: Подтверждение email
+      operationId: authVerifyEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailRequest'
+      responses:
+        '204':
+          description: Email подтверждён
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /auth/switch-org:
+    post:
+      tags: [auth]
+      summary: Выпуск новой пары токенов в контексте организации
+      operationId: authSwitchOrg
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwitchOrgRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokensResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /auth/oidc/{provider}/start:
+    get:
+      tags: [auth]
+      security: []
+      summary: Редирект на внешний OIDC (Google, GitHub, …)
+      operationId: authOidcStart
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            examples: [google, github]
+      responses:
+        '302':
+          description: Redirect
+
+  /auth/oidc/{provider}/callback:
+    get:
+      tags: [auth]
+      security: []
+      summary: Callback OIDC
+      operationId: authOidcCallback
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect в приложение с токенами или one-time code
+
+  /auth/sso/{orgSlug}/start:
+    get:
+      tags: [auth]
+      security: []
+      summary: Старт Enterprise SSO для организации
+      operationId: authSsoStart
+      parameters:
+        - name: orgSlug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect на IdP
+
+  /auth/sso/{orgSlug}/acs:
+    post:
+      tags: [auth]
+      security: []
+      summary: SAML ACS (POST binding)
+      operationId: authSsoSamlAcs
+      parameters:
+        - name: orgSlug
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '302':
+          description: Redirect в приложение
+
+  /me:
+    get:
+      tags: [me]
+      summary: Текущий пользователь и организации
+      operationId: meGet
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+    patch:
+      tags: [me]
+      summary: Обновление профиля
+      operationId: mePatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MePatchRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPublic'
+
+  /me/password:
+    post:
+      tags: [me]
+      summary: Смена пароля
+      operationId: meChangePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: OK
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /me/sessions:
+    get:
+      tags: [me]
+      summary: Активные refresh-сессии
+      operationId: meListSessions
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RefreshSessionPublic'
+
+  /me/sessions/{sessionId}:
+    delete:
+      tags: [me]
+      summary: Отзыв сессии
+      operationId: meRevokeSession
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: OK
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /organizations:
+    post:
+      tags: [organizations]
+      summary: Создать организацию (создатель — owner)
+      operationId: orgCreate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationCreateRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /organizations/{orgId}:
+    get:
+      tags: [organizations]
+      summary: Карточка организации
+      operationId: orgGet
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [organizations]
+      summary: Обновить организацию
+      operationId: orgPatch
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationPatchRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /organizations/{orgId}/members:
+    get:
+      tags: [organizations]
+      summary: Список членов
+      operationId: orgMembersList
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberPage'
+
+  /organizations/{orgId}/members/{membershipId}:
+    patch:
+      tags: [organizations]
+      summary: Смена ролей / статуса членства
+      operationId: orgMemberPatch
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - $ref: '#/components/parameters/MembershipId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipPatchRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags: [organizations]
+      summary: Исключить члена
+      operationId: orgMemberDelete
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - $ref: '#/components/parameters/MembershipId'
+      responses:
+        '204':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /organizations/{orgId}/invites:
+    get:
+      tags: [organizations]
+      summary: Список инвайтов
+      operationId: orgInvitesList
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Invite'
+    post:
+      tags: [organizations]
+      summary: Создать инвайт
+      operationId: orgInvitesCreate
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteCreateRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteCreated'
+
+  /organizations/{orgId}/invites/{inviteId}:
+    delete:
+      tags: [organizations]
+      summary: Отозвать инвайт
+      operationId: orgInvitesRevoke
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - name: inviteId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: OK
+
+  /invites/accept:
+    post:
+      tags: [organizations]
+      summary: Принять инвайт (токен из письма; отдельный путь без конфликта с inviteId)
+      operationId: invitesAccept
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteAcceptRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /organizations/{orgId}/idp:
+    get:
+      tags: [idp]
+      summary: Настройки IdP (маскированные секреты)
+      operationId: orgIdpGet
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgIdpConfigPublic'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [idp]
+      summary: Обновить IdP
+      operationId: orgIdpPatch
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgIdpConfigPatchRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgIdpConfigPublic'
+
+  /organizations/{orgId}/idp/test:
+    post:
+      tags: [idp]
+      summary: Проверка metadata / discovery
+      operationId: orgIdpTest
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgIdpTestRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgIdpTestResult'
+
+  /internal/token/introspect:
+    post:
+      tags: [internal]
+      security: []
+      summary: Introspection access-токена (только внутренняя сеть / mTLS)
+      description: Заголовок Authorization с Bearer или body — по политике gateway.
+      operationId: internalTokenIntrospect
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntrospectRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntrospectResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    OrgId:
+      name: orgId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    MembershipId:
+      name: membershipId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    Unauthorized:
+      description: Не авторизован
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    Forbidden:
+      description: Нет прав
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    Conflict:
+      description: Конфликт (например, email занят)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    NotFound:
+      description: Не найдено
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+
+  schemas:
+    ErrorBody:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          examples: [VALIDATION_ERROR, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, CONFLICT]
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+    AcceptedEmpty:
+      type: object
+      properties:
+        accepted:
+          type: boolean
+          const: true
+
+    RegisterRequest:
+      type: object
+      required: [email, password, displayName]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 10
+        displayName:
+          type: string
+          maxLength: 200
+        organizationName:
+          type: string
+          description: Если задано — создаётся org и пользователь становится owner
+          maxLength: 200
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    ResetPasswordRequest:
+      type: object
+      required: [token, newPassword]
+      properties:
+        token:
+          type: string
+        newPassword:
+          type: string
+          minLength: 10
+
+    VerifyEmailRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+
+    SwitchOrgRequest:
+      type: object
+      required: [orgId]
+      properties:
+        orgId:
+          type: string
+          format: uuid
+
+    AuthTokensResponse:
+      type: object
+      required: [accessToken, accessExpiresIn, tokenType]
+      properties:
+        accessToken:
+          type: string
+        accessExpiresIn:
+          type: integer
+          description: секунды до истечения access
+        refreshToken:
+          type: string
+          description: Может отсутствовать при выдаче только cookie
+        refreshExpiresIn:
+          type: integer
+        tokenType:
+          type: string
+          const: Bearer
+
+    UserPublic:
+      type: object
+      required: [id, email, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        emailVerified:
+          type: boolean
+        displayName:
+          type: string
+        locale:
+          type: string
+        status:
+          type: string
+          enum: [active, suspended, deleted]
+
+    MeOrgSummary:
+      type: object
+      required: [orgId, slug, name, roles]
+      properties:
+        orgId:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+
+    MeResponse:
+      type: object
+      required: [user, organizations]
+      properties:
+        user:
+          $ref: '#/components/schemas/UserPublic'
+        organizations:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeOrgSummary'
+
+    MePatchRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+          maxLength: 200
+        locale:
+          type: string
+          maxLength: 16
+
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+          minLength: 10
+
+    RefreshSessionPublic:
+      type: object
+      required: [id, createdAt, expiresAt, orgId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        orgId:
+          type: string
+          format: uuid
+          nullable: true
+        deviceLabel:
+          type: string
+          nullable: true
+
+    Organization:
+      type: object
+      required: [id, name, slug, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        planTier:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    OrganizationCreateRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        slug:
+          type: string
+          pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+        planTier:
+          type: string
+          nullable: true
+
+    OrganizationPatchRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+
+    Membership:
+      type: object
+      required: [id, userId, orgId, status, roles, joinedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        orgId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [invited, active, suspended]
+        roles:
+          type: array
+          items:
+            type: string
+        joinedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    MembershipPatchRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [invited, active, suspended]
+        roleKeys:
+          type: array
+          items:
+            type: string
+          description: Полный набор ролей членства (замена)
+
+    MemberPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Membership'
+        nextCursor:
+          type: string
+          nullable: true
+
+    Invite:
+      type: object
+      required: [id, email, expiresAt, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        roleKeys:
+          type: array
+          items:
+            type: string
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        acceptedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    InviteCreateRequest:
+      type: object
+      required: [email, roleKeys]
+      properties:
+        email:
+          type: string
+          format: email
+        roleKeys:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        ttlHours:
+          type: integer
+          minimum: 1
+          maximum: 720
+          default: 168
+
+    InviteCreated:
+      allOf:
+        - $ref: '#/components/schemas/Invite'
+        - type: object
+          properties:
+            acceptUrlHint:
+              type: string
+              description: Только для dev; в prod токен только в email
+
+    InviteAcceptRequest:
+      type: object
+      required: [orgId, token]
+      properties:
+        orgId:
+          type: string
+          format: uuid
+        token:
+          type: string
+
+    OrgIdpConfigPublic:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [oidc, saml]
+        issuer:
+          type: string
+          nullable: true
+        clientId:
+          type: string
+          nullable: true
+        metadataUrl:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+        jitProvisioning:
+          type: boolean
+        defaultRoleKey:
+          type: string
+          nullable: true
+
+    OrgIdpConfigPatchRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [oidc, saml]
+        issuer:
+          type: string
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+          description: Передаётся один раз; в ответе не возвращается
+        metadataUrl:
+          type: string
+        enabled:
+          type: boolean
+        jitProvisioning:
+          type: boolean
+        defaultRoleKey:
+          type: string
+
+    OrgIdpTestRequest:
+      type: object
+      properties:
+        metadataUrl:
+          type: string
+
+    OrgIdpTestResult:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+        message:
+          type: string
+        issuerResolved:
+          type: string
+          nullable: true
+
+    IntrospectRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: access JWT
+
+    IntrospectResponse:
+      type: object
+      required: [active, sub]
+      properties:
+        active:
+          type: boolean
+        sub:
+          type: string
+          format: uuid
+        orgId:
+          type: string
+          format: uuid
+          nullable: true
+        scope:
+          type: string
+          nullable: true
+        roles:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        exp:
+          type: integer
+          nullable: true

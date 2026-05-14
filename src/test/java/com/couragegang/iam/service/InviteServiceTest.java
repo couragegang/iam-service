@@ -1,0 +1,121 @@
+package com.couragegang.iam.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.couragegang.iam.api.dto.OrgModels.InviteAcceptRequest;
+import com.couragegang.iam.api.dto.OrgModels.Membership;
+import com.couragegang.iam.error.IamApiException;
+import com.couragegang.iam.repo.InviteRepository;
+import com.couragegang.iam.repo.MembershipRepository;
+import com.couragegang.iam.repo.RoleRepository;
+import com.couragegang.iam.repo.UserRepository;
+import io.micronaut.http.HttpStatus;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+@ExtendWith(MockitoExtension.class)
+final class InviteServiceTest {
+
+    @Mock
+    InviteRepository invites;
+
+    @Mock
+    UserRepository users;
+
+    @Mock
+    MembershipRepository memberships;
+
+    @Mock
+    RoleRepository roles;
+
+    InviteService svc;
+
+    @BeforeEach
+    void setUp() {
+        svc = new InviteService(invites, users, memberships, roles);
+    }
+
+    @Test
+    void acceptSuccess() throws Exception {
+        var uid = UUID.randomUUID();
+        var org = UUID.randomUUID();
+        var memId = UUID.randomUUID();
+        var user = new UserRepository.UserRow(uid, "Inv@x.co", null, "active", "I", "ru");
+        when(users.findById(uid)).thenReturn(Optional.of(user));
+        when(invites.findPendingByOrgAndTokenHash(eq(org), anyString()))
+                .thenReturn(Optional.of(new InviteRepository.InviteAcceptData(UUID.randomUUID(), "inv@x.co", List.of("member"))));
+        when(memberships.findByUserAndOrg(uid, org)).thenReturn(Optional.empty());
+        when(memberships.insert(uid, org, "active")).thenReturn(memId);
+        when(roles.idsByKeys(List.of("member"))).thenReturn(List.of(UUID.randomUUID()));
+        doNothing().when(memberships).replaceRoles(eq(memId), any());
+        doNothing().when(invites).markAccepted(any());
+        when(memberships.findMembership(org, memId))
+                .thenReturn(Optional.of(new MembershipRepository.MembershipRow(
+                        memId, uid, org, "active", List.of("member"), Instant.now())));
+        Membership m = svc.accept(uid, new InviteAcceptRequest(org, "raw-token"));
+        assertThat(m.orgId()).isEqualTo(org);
+        verify(invites).markAccepted(any());
+    }
+
+    @Test
+    void acceptInvalidInvite() throws Exception {
+        var uid = UUID.randomUUID();
+        when(users.findById(uid))
+                .thenReturn(Optional.of(new UserRepository.UserRow(uid, "a@b.co", null, "active", "A", "ru")));
+        when(invites.findPendingByOrgAndTokenHash(any(), anyString())).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> svc.accept(uid, new InviteAcceptRequest(UUID.randomUUID(), "t")))
+                .isInstanceOf(IamApiException.class)
+                .matches(ex -> ((IamApiException) ex).status() == HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void acceptEmailMismatch() throws Exception {
+        var uid = UUID.randomUUID();
+        var org = UUID.randomUUID();
+        when(users.findById(uid))
+                .thenReturn(Optional.of(new UserRepository.UserRow(uid, "a@b.co", null, "active", "A", "ru")));
+        when(invites.findPendingByOrgAndTokenHash(eq(org), anyString()))
+                .thenReturn(Optional.of(new InviteRepository.InviteAcceptData(UUID.randomUUID(), "other@b.co", List.of("member"))));
+        assertThatThrownBy(() -> svc.accept(uid, new InviteAcceptRequest(org, "tok")))
+                .isInstanceOf(IamApiException.class)
+                .matches(ex -> ((IamApiException) ex).status() == HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void acceptAlreadyMember() throws Exception {
+        var uid = UUID.randomUUID();
+        var org = UUID.randomUUID();
+        when(users.findById(uid))
+                .thenReturn(Optional.of(new UserRepository.UserRow(uid, "a@b.co", null, "active", "A", "ru")));
+        when(invites.findPendingByOrgAndTokenHash(eq(org), anyString()))
+                .thenReturn(Optional.of(new InviteRepository.InviteAcceptData(UUID.randomUUID(), "a@b.co", List.of("member"))));
+        when(memberships.findByUserAndOrg(uid, org))
+                .thenReturn(Optional.of(new MembershipRepository.MembershipRow(
+                        UUID.randomUUID(), uid, org, "active", List.of("member"), Instant.now())));
+        assertThatThrownBy(() -> svc.accept(uid, new InviteAcceptRequest(org, "tok")))
+                .isInstanceOf(IamApiException.class)
+                .matches(ex -> ((IamApiException) ex).status() == HttpStatus.CONFLICT);
+    }
+
+    @Test
+    void acceptSqlErrorWrapped() throws Exception {
+        when(users.findById(any())).thenThrow(new SQLException("db"));
+        assertThatThrownBy(() -> svc.accept(UUID.randomUUID(), new InviteAcceptRequest(UUID.randomUUID(), "t")))
+                .isInstanceOf(IllegalStateException.class);
+    }
+}
