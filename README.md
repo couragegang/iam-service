@@ -124,6 +124,8 @@ OpenAPI-файл упаковывается в JAR (`META-INF/swagger`) для �
 | Ошибки | теги статуса / `outcome` у HTTP; 4xx/5xx в `http.server.requests` |
 | Насыщение | пул БД `hikaricp_*`, процессор и JVM (`process.cpu.usage`, `jvm.threads.*` и др.) |
 
+**Prometheus scrape:** пример конфигурации с `job_name: iam-service` — [`deploy/prometheus-scrape.example.yml`](deploy/prometheus-scrape.example.yml). В Grafana-дашборде переменная **`job`** подхватывает все значения `label_values(up, job)`; для панелей выберите **`iam-service`** (или **All**).
+
 ---
 
 ## Аутентификация запросов
@@ -288,13 +290,18 @@ services/iam-service/
 - **JaCoCo**: задача `check` включает **`jacocoTestCoverageVerification`** с порогом **не менее 80 % по метрике branch** для основного кода.
 - В расчёт покрытия **не входят** (исключены в `build.gradle.kts`): каталог `api/dto` (только данные), все классы `repo` (JDBC), точка входа `Application`, класс **`OidcService`** (сетевой OAuth; для него при необходимости добавляют отдельные интеграционные или контрактные тесты).
 
-Команды (из каталога `services/iam-service`, при установленном Gradle):
+Команды (из каталога репозитория, **JDK 21**):
 
 ```bash
-gradle test
-gradle jacocoTestReport
-gradle check
+# Первый раз, если нет gradlew:
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap-gradle-wrapper.ps1
+
+./gradlew test
+./gradlew jacocoTestReport
+./gradlew check
 ```
+
+На Windows: `gradlew.bat` вместо `./gradlew`. Сборка в Docker (`docker compose up --build`) JVM на хосте не требует.
 
 Отчёт HTML: `build/reports/jacoco/test/html/index.html`. В Docker-образе по умолчанию выполняется только сборка **shadowJar** без тестов.
 

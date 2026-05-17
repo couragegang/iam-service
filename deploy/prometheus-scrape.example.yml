@@ -1,0 +1,14 @@
+# Пример scrape для IAM (Micronaut Prometheus на /v1/iam/metrics).
+# Скопируйте фрагмент в prometheus.yml или используйте как file_sd.
+#
+# Важно: label job должен совпадать с выбором в Grafana-дашборде
+# (grafana/iam-service-dashboard.json, переменная job = label_values(up, job)).
+
+scrape_configs:
+  - job_name: iam-service
+    metrics_path: /v1/iam/metrics
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["localhost:8080"]
+        labels:
+          service: iam

@@ -12,12 +12,14 @@ version = "0.1.0-SNAPSHOT"
 group = "com.couragegang.iam"
 
 repositories {
+    maven { url = uri("https://maven.aliyun.com/repository/public") }
     mavenCentral()
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }
 }
 
 micronaut {
