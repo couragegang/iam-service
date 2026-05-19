@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 import com.couragegang.iam.api.dto.OrgModels.InviteAcceptRequest;
 import com.couragegang.iam.api.dto.OrgModels.Membership;
 import com.couragegang.iam.error.IamApiException;
+import com.couragegang.iam.repo.GroupRepository;
 import com.couragegang.iam.repo.InviteRepository;
 import com.couragegang.iam.repo.MembershipRepository;
 import com.couragegang.iam.repo.RoleRepository;
@@ -41,13 +42,16 @@ final class InviteServiceTest {
     MembershipRepository memberships;
 
     @Mock
+    GroupRepository groups;
+
+    @Mock
     RoleRepository roles;
 
     InviteService svc;
 
     @BeforeEach
     void setUp() {
-        svc = new InviteService(invites, users, memberships, roles);
+        svc = new InviteService(invites, users, memberships, groups, roles);
     }
 
     @Test
@@ -58,15 +62,16 @@ final class InviteServiceTest {
         var user = new UserRepository.UserRow(uid, "Inv@x.co", null, "active", "I", "ru");
         when(users.findById(uid)).thenReturn(Optional.of(user));
         when(invites.findPendingByOrgAndTokenHash(eq(org), anyString()))
-                .thenReturn(Optional.of(new InviteRepository.InviteAcceptData(UUID.randomUUID(), "inv@x.co", List.of("member"))));
+                .thenReturn(Optional.of(new InviteRepository.InviteAcceptData(
+                        UUID.randomUUID(), "inv@x.co", null, List.of("member"), List.of())));
         when(memberships.findByUserAndOrg(uid, org)).thenReturn(Optional.empty());
-        when(memberships.insert(uid, org, "active")).thenReturn(memId);
+        when(memberships.insert(uid, org, "active", "org_wide")).thenReturn(memId);
         when(roles.idsByKeys(List.of("member"))).thenReturn(List.of(UUID.randomUUID()));
         doNothing().when(memberships).replaceRoles(eq(memId), any());
         doNothing().when(invites).markAccepted(any());
         when(memberships.findMembership(org, memId))
                 .thenReturn(Optional.of(new MembershipRepository.MembershipRow(
-                        memId, uid, org, "active", List.of("member"), Instant.now())));
+                        memId, uid, org, "active", "org_wide", List.of("member"), Instant.now())));
         Membership m = svc.accept(uid, new InviteAcceptRequest(org, "raw-token"));
         assertThat(m.orgId()).isEqualTo(org);
         verify(invites).markAccepted(any());
@@ -90,7 +95,8 @@ final class InviteServiceTest {
         when(users.findById(uid))
                 .thenReturn(Optional.of(new UserRepository.UserRow(uid, "a@b.co", null, "active", "A", "ru")));
         when(invites.findPendingByOrgAndTokenHash(eq(org), anyString()))
-                .thenReturn(Optional.of(new InviteRepository.InviteAcceptData(UUID.randomUUID(), "other@b.co", List.of("member"))));
+                .thenReturn(Optional.of(new InviteRepository.InviteAcceptData(
+                        UUID.randomUUID(), "other@b.co", null, List.of("member"), List.of())));
         assertThatThrownBy(() -> svc.accept(uid, new InviteAcceptRequest(org, "tok")))
                 .isInstanceOf(IamApiException.class)
                 .matches(ex -> ((IamApiException) ex).status() == HttpStatus.FORBIDDEN);
@@ -103,10 +109,11 @@ final class InviteServiceTest {
         when(users.findById(uid))
                 .thenReturn(Optional.of(new UserRepository.UserRow(uid, "a@b.co", null, "active", "A", "ru")));
         when(invites.findPendingByOrgAndTokenHash(eq(org), anyString()))
-                .thenReturn(Optional.of(new InviteRepository.InviteAcceptData(UUID.randomUUID(), "a@b.co", List.of("member"))));
+                .thenReturn(Optional.of(new InviteRepository.InviteAcceptData(
+                        UUID.randomUUID(), "a@b.co", null, List.of("member"), List.of())));
         when(memberships.findByUserAndOrg(uid, org))
                 .thenReturn(Optional.of(new MembershipRepository.MembershipRow(
-                        UUID.randomUUID(), uid, org, "active", List.of("member"), Instant.now())));
+                        UUID.randomUUID(), uid, org, "active", "org_wide", List.of("member"), Instant.now())));
         assertThatThrownBy(() -> svc.accept(uid, new InviteAcceptRequest(org, "tok")))
                 .isInstanceOf(IamApiException.class)
                 .matches(ex -> ((IamApiException) ex).status() == HttpStatus.CONFLICT);

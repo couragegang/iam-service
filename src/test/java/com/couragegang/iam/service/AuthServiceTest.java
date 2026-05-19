@@ -21,6 +21,7 @@ import com.couragegang.iam.api.dto.AuthModels.SwitchOrgRequest;
 import com.couragegang.iam.api.dto.AuthModels.VerifyEmailRequest;
 import com.couragegang.iam.config.IamProperties;
 import com.couragegang.iam.error.IamApiException;
+import com.couragegang.iam.repo.GroupRepository;
 import com.couragegang.iam.repo.LoginAttemptRepository;
 import com.couragegang.iam.repo.MembershipRepository;
 import com.couragegang.iam.repo.OrganizationRepository;
@@ -65,6 +66,9 @@ final class AuthServiceTest {
     OrganizationRepository orgs;
 
     @Mock
+    GroupRepository groups;
+
+    @Mock
     MembershipRepository memberships;
 
     @Mock
@@ -80,7 +84,7 @@ final class AuthServiceTest {
     void setUp() {
         props = new IamProperties(TestSecrets.JWT_SECRET, 900, 3600, null, null, null, null, null, null);
         auth = new AuthService(
-                props, users, passwords, jwt, sessions, tokens, orgs, memberships, roles, loginAttempts);
+                props, users, passwords, jwt, sessions, tokens, orgs, groups, memberships, roles, loginAttempts);
     }
 
     @Test
@@ -106,7 +110,7 @@ final class AuthServiceTest {
         var req = new RegisterRequest("U@x.co", "pw-long-12", "N", null);
         var tok = auth.register(req);
         assertThat(tok.accessToken()).isEqualTo("access");
-        verify(memberships, never()).insert(any(), any(), anyString());
+        verify(memberships, never()).insert(any(), any(), anyString(), anyString());
     }
 
     @Test
@@ -121,7 +125,8 @@ final class AuthServiceTest {
         doNothing().when(tokens).insertEmailVerification(any(), anyString(), any());
         when(orgs.findIdBySlugLower("acme")).thenReturn(Optional.empty());
         when(orgs.insert(eq("Acme"), eq("acme"), eq(null))).thenReturn(orgId);
-        when(memberships.insert(uid, orgId, "active")).thenReturn(memId);
+        when(groups.insertDefault(orgId, "Acme")).thenReturn(UUID.randomUUID());
+        when(memberships.insert(uid, orgId, "active", "org_wide")).thenReturn(memId);
         when(roles.idByKey("owner")).thenReturn(Optional.of(ownerRole));
         when(jwt.mintAccess(eq(uid), eq(orgId), eq(List.of()))).thenReturn("jwt");
         when(sessions.insert(any(), eq(orgId), any(), anyString(), any(), anyString()))
@@ -142,7 +147,8 @@ final class AuthServiceTest {
         doNothing().when(tokens).insertEmailVerification(any(), anyString(), any());
         when(orgs.findIdBySlugLower("acme")).thenReturn(Optional.empty());
         when(orgs.insert(anyString(), anyString(), eq(null))).thenReturn(orgId);
-        when(memberships.insert(uid, orgId, "active")).thenReturn(UUID.randomUUID());
+        when(groups.insertDefault(orgId, "Acme")).thenReturn(UUID.randomUUID());
+        when(memberships.insert(uid, orgId, "active", "org_wide")).thenReturn(UUID.randomUUID());
         when(roles.idByKey("owner")).thenReturn(Optional.empty());
         var req = new RegisterRequest("O@x.co", "pw-long-12", "N", "Acme");
         assertThatThrownBy(() -> auth.register(req)).isInstanceOf(IllegalStateException.class);
@@ -213,7 +219,7 @@ final class AuthServiceTest {
         doNothing().when(sessions).revoke(sid);
         when(memberships.findByUserAndOrg(uid, org))
                 .thenReturn(Optional.of(new MembershipRepository.MembershipRow(
-                        UUID.randomUUID(), uid, org, "active", List.of("member"), Instant.now())));
+                        UUID.randomUUID(), uid, org, "active", "org_wide", List.of("member"), Instant.now())));
         when(jwt.mintAccess(eq(uid), eq(org), eq(List.of("member")))).thenReturn("acc");
         when(sessions.insert(eq(uid), eq(org), eq(fam), anyString(), any(), anyString()))
                 .thenReturn(new RefreshSessionRepository.SessionRow(
@@ -331,7 +337,7 @@ final class AuthServiceTest {
         var org = UUID.randomUUID();
         when(memberships.findByUserAndOrg(uid, org))
                 .thenReturn(Optional.of(new MembershipRepository.MembershipRow(
-                        UUID.randomUUID(), uid, org, "active", List.of("owner"), Instant.now())));
+                        UUID.randomUUID(), uid, org, "active", "org_wide", List.of("owner"), Instant.now())));
         when(jwt.mintAccess(eq(uid), eq(org), eq(List.of("owner")))).thenReturn("j");
         when(sessions.insert(eq(uid), eq(org), any(), anyString(), any(), anyString()))
                 .thenReturn(new RefreshSessionRepository.SessionRow(
@@ -368,7 +374,7 @@ final class AuthServiceTest {
         when(orgs.findIdBySlugLower("acme")).thenReturn(Optional.of(UUID.randomUUID()));
         when(orgs.findIdBySlugLower("acme-1")).thenReturn(Optional.empty());
         when(orgs.insert(eq("Acme"), eq("acme-1"), eq(null))).thenReturn(UUID.randomUUID());
-        when(memberships.insert(any(), any(), eq("active"))).thenReturn(UUID.randomUUID());
+        when(memberships.insert(any(), any(), eq("active"), eq("org_wide"))).thenReturn(UUID.randomUUID());
         when(roles.idByKey("owner")).thenReturn(Optional.of(UUID.randomUUID()));
         lenient()
                 .when(sessions.insert(any(), any(), any(), anyString(), any(), anyString()))

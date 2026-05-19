@@ -13,10 +13,14 @@ import com.couragegang.iam.api.dto.OrgModels.Membership;
 import com.couragegang.iam.api.dto.OrgModels.MembershipPatchRequest;
 import com.couragegang.iam.api.dto.OrgModels.Organization;
 import com.couragegang.iam.api.dto.OrgModels.OrganizationCreateRequest;
+import com.couragegang.iam.api.dto.OrgModels.OrganizationGroup;
+import com.couragegang.iam.api.dto.OrgModels.OrganizationGroupCreateRequest;
+import com.couragegang.iam.api.dto.OrgModels.OrganizationGroupListResponse;
 import com.couragegang.iam.api.dto.OrgModels.OrganizationPatchRequest;
 import com.couragegang.iam.error.IamApiException;
 import com.couragegang.iam.metrics.OutboundHttpMetrics;
 import com.couragegang.iam.repo.IdpRepository;
+import com.couragegang.iam.repo.GroupRepository;
 import com.couragegang.iam.repo.InviteRepository;
 import com.couragegang.iam.repo.MembershipRepository;
 import com.couragegang.iam.repo.OrganizationRepository;
@@ -43,6 +47,7 @@ public final class OrganizationService {
     private static final SecureRandom RND = new SecureRandom();
 
     private final OrganizationRepository orgs;
+    private final GroupRepository groups;
     private final MembershipRepository memberships;
     private final RoleRepository roles;
     private final InviteRepository invites;
@@ -51,12 +56,14 @@ public final class OrganizationService {
 
     public OrganizationService(
             OrganizationRepository orgs,
+            GroupRepository groups,
             MembershipRepository memberships,
             RoleRepository roles,
             InviteRepository invites,
             IdpRepository idps,
             OutboundHttpMetrics outboundHttp) {
         this.orgs = orgs;
+        this.groups = groups;
         this.memberships = memberships;
         this.roles = roles;
         this.invites = invites;
@@ -71,10 +78,11 @@ public final class OrganizationService {
                 throw new IamApiException(HttpStatus.CONFLICT, "CONFLICT", "slug taken");
             }
             var orgId = orgs.insert(req.name().trim(), slug, req.planTier());
-            var memId = memberships.insert(actorId, orgId, "active");
+            var defaultGroupId = groups.insertDefault(orgId, req.name().trim());
+            var memId = memberships.insert(actorId, orgId, "active", "org_wide");
             var ownerId = roles.idByKey("owner").orElseThrow();
             memberships.addRole(memId, ownerId);
-            return toOrg(orgs.findById(orgId).orElseThrow());
+            return toOrg(orgs.findById(orgId).orElseThrow(), defaultGroupId);
         } catch (SQLException e) {
             throw new IllegalStateException(e);
         }
@@ -84,7 +92,9 @@ public final class OrganizationService {
         try {
             var m = requireActiveMember(actorId, orgId);
             requirePerm(m, "iam.org.read");
-            return toOrg(orgs.findById(orgId).orElseThrow(() -> notFound()));
+            var row = orgs.findById(orgId).orElseThrow(() -> notFound());
+            var defaultGroupId = groups.findDefaultByOrg(orgId).map(GroupRepository.GroupRow::id).orElseThrow();
+            return toOrg(row, defaultGroupId);
         } catch (SQLException e) {
             throw new IllegalStateException(e);
         }
@@ -95,7 +105,9 @@ public final class OrganizationService {
             var m = requireActiveMember(actorId, orgId);
             requirePerm(m, "iam.org.update");
             orgs.update(orgId, req.name(), req.slug());
-            return toOrg(orgs.findById(orgId).orElseThrow(() -> notFound()));
+            var row = orgs.findById(orgId).orElseThrow(() -> notFound());
+            var defaultGroupId = groups.findDefaultByOrg(orgId).map(GroupRepository.GroupRow::id).orElseThrow();
+            return toOrg(row, defaultGroupId);
         } catch (SQLException e) {
             throw new IllegalStateException(e);
         }
@@ -107,7 +119,8 @@ public final class OrganizationService {
             requirePerm(m, "iam.member.read");
             var rows = memberships.listByOrg(orgId, limit);
             var items = rows.stream()
-                    .map(r -> new Membership(r.id(), r.userId(), r.orgId(), r.status(), r.roleKeys(), r.joinedAt()))
+                    .map(r -> new Membership(
+                            r.id(), r.userId(), r.orgId(), r.status(), r.accessScope(), r.roleKeys(), r.joinedAt()))
                     .toList();
             return new MemberPage(items, null);
         } catch (SQLException e) {
@@ -138,7 +151,8 @@ public final class OrganizationService {
             }
             return memberships
                     .findMembership(orgId, membershipId)
-                    .map(r -> new Membership(r.id(), r.userId(), r.orgId(), r.status(), r.roleKeys(), r.joinedAt()))
+                    .map(r -> new Membership(
+                            r.id(), r.userId(), r.orgId(), r.status(), r.accessScope(), r.roleKeys(), r.joinedAt()))
                     .orElseThrow();
         } catch (SQLException e) {
             throw new IllegalStateException(e);
@@ -168,7 +182,9 @@ public final class OrganizationService {
                     .map(r -> new Invite(
                             r.id(),
                             r.email(),
+                            r.groupId(),
                             r.roleKeys(),
+                            r.groupRoleKeys(),
                             r.expiresAt(),
                             r.createdAt(),
                             r.acceptedAt()))
@@ -187,17 +203,30 @@ public final class OrganizationService {
             var raw = randomToken();
             var hash = HexSha256.hashUtf8(raw);
             var exp = Instant.now().plus(ttl, ChronoUnit.HOURS);
-            var inviteId = invites.insertInvite(orgId, req.email().trim().toLowerCase(), hash, exp, m.id());
+            if (req.groupId() != null && groups.findById(orgId, req.groupId()).isEmpty()) {
+                throw new IamApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "unknown group");
+            }
+            var inviteId = invites.insertInvite(
+                    orgId, req.groupId(), req.email().trim().toLowerCase(), hash, exp, m.id());
             var roleIds = roles.idsByKeys(req.roleKeys());
             if (roleIds.size() != req.roleKeys().size()) {
                 throw new IamApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "unknown role key");
             }
             invites.attachRoles(inviteId, roleIds);
+            if (req.groupId() != null && req.groupRoleKeys() != null && !req.groupRoleKeys().isEmpty()) {
+                var groupRoleIds = roles.idsByKeys(req.groupRoleKeys());
+                if (groupRoleIds.size() != req.groupRoleKeys().size()) {
+                    throw new IamApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "unknown group role key");
+                }
+                invites.attachGroupRoles(inviteId, groupRoleIds);
+            }
             var row = invites.listPending(orgId).stream().filter(x -> x.id().equals(inviteId)).findFirst().orElseThrow();
             return new InviteCreated(
                     row.id(),
                     row.email(),
+                    row.groupId(),
                     row.roleKeys(),
+                    row.groupRoleKeys(),
                     row.expiresAt(),
                     row.createdAt(),
                     row.acceptedAt(),
@@ -214,6 +243,33 @@ public final class OrganizationService {
             if (!invites.revokeForOrg(orgId, inviteId)) {
                 throw notFound();
             }
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    public OrganizationGroupListResponse listGroups(UUID actorId, UUID orgId, int limit) {
+        try {
+            var m = requireActiveMember(actorId, orgId);
+            requirePerm(m, "iam.group.read");
+            var rows = groups.listByOrg(orgId, limit);
+            var items = rows.stream().map(OrganizationService::toGroup).toList();
+            return new OrganizationGroupListResponse(items);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    public OrganizationGroup createGroup(UUID actorId, UUID orgId, OrganizationGroupCreateRequest req) {
+        try {
+            var m = requireActiveMember(actorId, orgId);
+            requirePerm(m, "iam.group.manage");
+            var slug = req.slug().trim().toLowerCase();
+            if ("default".equals(slug)) {
+                throw new IamApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "reserved slug");
+            }
+            var groupId = groups.insert(orgId, req.name().trim(), slug, false);
+            return toGroup(groups.findById(orgId, groupId).orElseThrow());
         } catch (SQLException e) {
             throw new IllegalStateException(e);
         }
@@ -299,8 +355,12 @@ public final class OrganizationService {
         return new IamApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "not found");
     }
 
-    private static Organization toOrg(OrganizationRepository.OrgRow r) {
-        return new Organization(r.id(), r.name(), r.slug(), r.planTier(), r.createdAt());
+    private static Organization toOrg(OrganizationRepository.OrgRow r, UUID defaultGroupId) {
+        return new Organization(r.id(), r.name(), r.slug(), r.planTier(), defaultGroupId, r.createdAt());
+    }
+
+    private static OrganizationGroup toGroup(GroupRepository.GroupRow r) {
+        return new OrganizationGroup(r.id(), r.orgId(), r.name(), r.slug(), r.isDefault(), r.status(), r.createdAt());
     }
 
     private static OrgIdpConfigPublic mapIdpPublic(IdpRepository.IdpRow r) {

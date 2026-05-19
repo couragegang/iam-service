@@ -20,6 +20,7 @@ import com.couragegang.iam.api.dto.OrgModels.OrganizationCreateRequest;
 import com.couragegang.iam.api.dto.OrgModels.OrganizationPatchRequest;
 import com.couragegang.iam.error.IamApiException;
 import com.couragegang.iam.metrics.OutboundHttpMetrics;
+import com.couragegang.iam.repo.GroupRepository;
 import com.couragegang.iam.repo.IdpRepository;
 import com.couragegang.iam.repo.InviteRepository;
 import com.couragegang.iam.repo.MembershipRepository;
@@ -50,10 +51,15 @@ final class OrganizationServiceTest {
             "iam.member.manage",
             "iam.member.invite",
             "iam.idp.read",
-            "iam.idp.manage");
+            "iam.idp.manage",
+            "iam.group.read",
+            "iam.group.manage");
 
     @Mock
     OrganizationRepository orgRepo;
+
+    @Mock
+    GroupRepository groups;
 
     @Mock
     MembershipRepository memberships;
@@ -75,7 +81,7 @@ final class OrganizationServiceTest {
     void setUp() {
         var meterRegistry = new SimpleMeterRegistry();
         var outboundHttp = new OutboundHttpMetrics(meterRegistry);
-        svc = new OrganizationService(orgRepo, memberships, roles, invites, idps, outboundHttp);
+        svc = new OrganizationService(orgRepo, groups, memberships, roles, invites, idps, outboundHttp);
         actor = UUID.randomUUID();
         orgId = UUID.randomUUID();
         lenient().when(roles.distinctPermissionKeysForRoleKeys(anyList())).thenReturn(ALL_PERMS);
@@ -84,7 +90,7 @@ final class OrganizationServiceTest {
     private void activeMember() throws SQLException {
         when(memberships.findByUserAndOrg(actor, orgId))
                 .thenReturn(Optional.of(new MembershipRepository.MembershipRow(
-                        UUID.randomUUID(), actor, orgId, "active", List.of("owner"), Instant.now())));
+                        UUID.randomUUID(), actor, orgId, "active", "org_wide", List.of("owner"), Instant.now())));
     }
 
     @Test
@@ -98,21 +104,25 @@ final class OrganizationServiceTest {
     @Test
     void createSuccess() throws Exception {
         var newOrg = UUID.randomUUID();
+        var defaultGroup = UUID.randomUUID();
         when(orgRepo.findIdBySlugLower("newco")).thenReturn(Optional.empty());
         when(orgRepo.insert(eq("Co"), eq("newco"), eq(null))).thenReturn(newOrg);
-        when(memberships.insert(actor, newOrg, "active")).thenReturn(UUID.randomUUID());
+        when(groups.insertDefault(newOrg, "Co")).thenReturn(defaultGroup);
+        when(memberships.insert(actor, newOrg, "active", "org_wide")).thenReturn(UUID.randomUUID());
         when(roles.idByKey("owner")).thenReturn(Optional.of(UUID.randomUUID()));
         when(orgRepo.findById(newOrg))
                 .thenReturn(Optional.of(new OrganizationRepository.OrgRow(newOrg, "Co", "newco", null, Instant.now())));
         var org = svc.create(actor, new OrganizationCreateRequest("Co", "newco", null));
         assertThat(org.slug()).isEqualTo("newco");
+        assertThat(org.defaultGroupId()).isEqualTo(defaultGroup);
     }
 
     @Test
     void createOwnerRoleMissing() throws Exception {
         when(orgRepo.findIdBySlugLower("x")).thenReturn(Optional.empty());
         when(orgRepo.insert(anyString(), eq("x"), any())).thenReturn(orgId);
-        when(memberships.insert(actor, orgId, "active")).thenReturn(UUID.randomUUID());
+        when(groups.insertDefault(orgId, "N")).thenReturn(UUID.randomUUID());
+        when(memberships.insert(actor, orgId, "active", "org_wide")).thenReturn(UUID.randomUUID());
         when(roles.idByKey("owner")).thenReturn(Optional.empty());
         assertThatThrownBy(() -> svc.create(actor, new OrganizationCreateRequest("N", "x", null)))
                 .isInstanceOf(IllegalStateException.class);
@@ -128,7 +138,7 @@ final class OrganizationServiceTest {
     void getInactiveMember() throws Exception {
         when(memberships.findByUserAndOrg(actor, orgId))
                 .thenReturn(Optional.of(new MembershipRepository.MembershipRow(
-                        UUID.randomUUID(), actor, orgId, "suspended", List.of("owner"), Instant.now())));
+                        UUID.randomUUID(), actor, orgId, "suspended", "org_wide", List.of("owner"), Instant.now())));
         assertThatThrownBy(() -> svc.get(actor, orgId)).isInstanceOf(IamApiException.class);
     }
 
@@ -142,17 +152,25 @@ final class OrganizationServiceTest {
     @Test
     void getSuccess() throws Exception {
         activeMember();
+        var defaultGroup = UUID.randomUUID();
         when(orgRepo.findById(orgId))
                 .thenReturn(Optional.of(new OrganizationRepository.OrgRow(orgId, "O", "o", null, Instant.now())));
+        when(groups.findDefaultByOrg(orgId))
+                .thenReturn(Optional.of(new GroupRepository.GroupRow(
+                        defaultGroup, orgId, "O", "default", true, "active", Instant.now())));
         assertThat(svc.get(actor, orgId).name()).isEqualTo("O");
     }
 
     @Test
     void patchSuccess() throws Exception {
         activeMember();
+        var defaultGroup = UUID.randomUUID();
         doNothing().when(orgRepo).update(eq(orgId), any(), any());
         when(orgRepo.findById(orgId))
                 .thenReturn(Optional.of(new OrganizationRepository.OrgRow(orgId, "N", "s", null, Instant.now())));
+        when(groups.findDefaultByOrg(orgId))
+                .thenReturn(Optional.of(new GroupRepository.GroupRow(
+                        defaultGroup, orgId, "N", "default", true, "active", Instant.now())));
         var o = svc.patch(actor, orgId, new OrganizationPatchRequest("N", "s"));
         assertThat(o.name()).isEqualTo("N");
     }
@@ -163,7 +181,7 @@ final class OrganizationServiceTest {
         var mid = UUID.randomUUID();
         when(memberships.listByOrg(orgId, 10))
                 .thenReturn(List.of(new MembershipRepository.MembershipRow(
-                        mid, UUID.randomUUID(), orgId, "active", List.of("member"), Instant.now())));
+                        mid, UUID.randomUUID(), orgId, "active", "org_wide", List.of("member"), Instant.now())));
         var page = svc.members(actor, orgId, 10);
         assertThat(page.items()).hasSize(1);
     }
@@ -173,9 +191,9 @@ final class OrganizationServiceTest {
         activeMember();
         var mid = UUID.randomUUID();
         var invited = new MembershipRepository.MembershipRow(
-                mid, UUID.randomUUID(), orgId, "invited", List.of("member"), null);
+                mid, UUID.randomUUID(), orgId, "invited", "group_scoped", List.of("member"), null);
         var active = new MembershipRepository.MembershipRow(
-                mid, UUID.randomUUID(), orgId, "active", List.of("member"), Instant.now());
+                mid, UUID.randomUUID(), orgId, "active", "org_wide", List.of("member"), Instant.now());
         when(memberships.findMembership(orgId, mid)).thenReturn(Optional.of(invited), Optional.of(active));
         var m = svc.patchMember(actor, orgId, mid, new MembershipPatchRequest("active", null));
         assertThat(m.status()).isEqualTo("active");
@@ -186,7 +204,7 @@ final class OrganizationServiceTest {
         activeMember();
         var mid = UUID.randomUUID();
         var row = new MembershipRepository.MembershipRow(
-                mid, UUID.randomUUID(), orgId, "active", List.of("member"), Instant.now());
+                mid, UUID.randomUUID(), orgId, "active", "org_wide", List.of("member"), Instant.now());
         when(memberships.findMembership(orgId, mid)).thenReturn(Optional.of(row), Optional.of(row));
         svc.patchMember(actor, orgId, mid, new MembershipPatchRequest(null, List.of()));
         verify(memberships, never()).replaceRoles(any(), any());
@@ -197,7 +215,7 @@ final class OrganizationServiceTest {
         activeMember();
         var mid = UUID.randomUUID();
         var ownerOnly = new MembershipRepository.MembershipRow(
-                mid, UUID.randomUUID(), orgId, "active", List.of("owner"), Instant.now());
+                mid, UUID.randomUUID(), orgId, "active", "org_wide", List.of("owner"), Instant.now());
         when(memberships.findMembership(orgId, mid)).thenReturn(Optional.of(ownerOnly), Optional.of(ownerOnly));
         when(roles.idsByKeys(List.of("member"))).thenReturn(List.of(UUID.randomUUID()));
         when(memberships.countOwnersInOrg(orgId)).thenReturn(1L);
@@ -211,7 +229,7 @@ final class OrganizationServiceTest {
         activeMember();
         var mid = UUID.randomUUID();
         var mixed = new MembershipRepository.MembershipRow(
-                mid, UUID.randomUUID(), orgId, "active", List.of("owner", "member"), Instant.now());
+                mid, UUID.randomUUID(), orgId, "active", "org_wide", List.of("owner", "member"), Instant.now());
         when(memberships.findMembership(orgId, mid)).thenReturn(Optional.of(mixed), Optional.of(mixed));
         when(roles.idsByKeys(List.of("bad"))).thenReturn(List.of());
         when(memberships.countOwnersInOrg(orgId)).thenReturn(2L);
@@ -225,9 +243,9 @@ final class OrganizationServiceTest {
         var mid = UUID.randomUUID();
         var rid = UUID.randomUUID();
         var memberRow = new MembershipRepository.MembershipRow(
-                mid, UUID.randomUUID(), orgId, "active", List.of("member"), Instant.now());
+                mid, UUID.randomUUID(), orgId, "active", "org_wide", List.of("member"), Instant.now());
         var ownerRow = new MembershipRepository.MembershipRow(
-                mid, UUID.randomUUID(), orgId, "active", List.of("owner"), Instant.now());
+                mid, UUID.randomUUID(), orgId, "active", "org_wide", List.of("owner"), Instant.now());
         when(memberships.findMembership(orgId, mid)).thenReturn(Optional.of(memberRow), Optional.of(ownerRow));
         when(roles.idsByKeys(List.of("owner"))).thenReturn(List.of(rid));
         doNothing().when(memberships).replaceRoles(mid, List.of(rid));
@@ -241,7 +259,7 @@ final class OrganizationServiceTest {
         var mid = UUID.randomUUID();
         when(memberships.findMembership(orgId, mid))
                 .thenReturn(Optional.of(new MembershipRepository.MembershipRow(
-                        mid, UUID.randomUUID(), orgId, "active", List.of("owner"), Instant.now())));
+                        mid, UUID.randomUUID(), orgId, "active", "org_wide", List.of("owner"), Instant.now())));
         when(memberships.countOwnersInOrg(orgId)).thenReturn(1L);
         assertThatThrownBy(() -> svc.deleteMember(actor, orgId, mid)).isInstanceOf(IamApiException.class);
     }
@@ -252,7 +270,7 @@ final class OrganizationServiceTest {
         var mid = UUID.randomUUID();
         when(memberships.findMembership(orgId, mid))
                 .thenReturn(Optional.of(new MembershipRepository.MembershipRow(
-                        mid, UUID.randomUUID(), orgId, "active", List.of("member"), Instant.now())));
+                        mid, UUID.randomUUID(), orgId, "active", "org_wide", List.of("member"), Instant.now())));
         doNothing().when(memberships).deleteMembership(mid);
         svc.deleteMember(actor, orgId, mid);
         verify(memberships).deleteMembership(mid);
@@ -264,7 +282,7 @@ final class OrganizationServiceTest {
         var iid = UUID.randomUUID();
         when(invites.listPending(orgId))
                 .thenReturn(List.of(new InviteRepository.InviteRow(
-                        iid, "e@x.co", Instant.now(), Instant.now(), null, List.of("member"))));
+                        iid, "e@x.co", null, Instant.now(), Instant.now(), null, List.of("member"), List.of())));
         var list = svc.listInvites(actor, orgId);
         assertThat(list.items()).hasSize(1);
     }
@@ -274,7 +292,7 @@ final class OrganizationServiceTest {
         activeMember();
         when(roles.idsByKeys(List.of("x"))).thenReturn(List.of());
         assertThatThrownBy(() ->
-                        svc.createInvite(actor, orgId, new InviteCreateRequest("a@b.co", List.of("x"), null)))
+                        svc.createInvite(actor, orgId, new InviteCreateRequest("a@b.co", List.of("x"), null, null, null)))
                 .isInstanceOf(IamApiException.class);
     }
 
@@ -282,14 +300,14 @@ final class OrganizationServiceTest {
     void createInviteSuccess() throws Exception {
         activeMember();
         var iid = UUID.randomUUID();
-        when(invites.insertInvite(eq(orgId), eq("a@b.co"), anyString(), any(), any()))
+        when(invites.insertInvite(eq(orgId), eq(null), eq("a@b.co"), anyString(), any(), any()))
                 .thenReturn(iid);
         when(roles.idsByKeys(List.of("member"))).thenReturn(List.of(UUID.randomUUID()));
         doNothing().when(invites).attachRoles(eq(iid), anyList());
         when(invites.listPending(orgId))
                 .thenReturn(List.of(new InviteRepository.InviteRow(
-                        iid, "a@b.co", Instant.now(), Instant.now(), null, List.of("member"))));
-        var created = svc.createInvite(actor, orgId, new InviteCreateRequest("A@b.co", List.of("member"), 24));
+                        iid, "a@b.co", null, Instant.now(), Instant.now(), null, List.of("member"), List.of())));
+        var created = svc.createInvite(actor, orgId, new InviteCreateRequest("A@b.co", List.of("member"), null, null, 24));
         assertThat(created.email()).isEqualTo("a@b.co");
     }
 
@@ -393,7 +411,7 @@ final class OrganizationServiceTest {
     void missingPermission() throws Exception {
         when(memberships.findByUserAndOrg(actor, orgId))
                 .thenReturn(Optional.of(new MembershipRepository.MembershipRow(
-                        UUID.randomUUID(), actor, orgId, "active", List.of("member"), Instant.now())));
+                        UUID.randomUUID(), actor, orgId, "active", "org_wide", List.of("member"), Instant.now())));
         when(roles.distinctPermissionKeysForRoleKeys(List.of("member"))).thenReturn(List.of("iam.member.read"));
         assertThatThrownBy(() -> svc.get(actor, orgId)).isInstanceOf(IamApiException.class);
     }

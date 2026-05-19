@@ -10,6 +10,7 @@ import com.couragegang.iam.api.dto.AuthModels.SwitchOrgRequest;
 import com.couragegang.iam.api.dto.AuthModels.VerifyEmailRequest;
 import com.couragegang.iam.config.IamProperties;
 import com.couragegang.iam.error.IamApiException;
+import com.couragegang.iam.repo.GroupRepository;
 import com.couragegang.iam.repo.LoginAttemptRepository;
 import com.couragegang.iam.repo.MembershipRepository;
 import com.couragegang.iam.repo.OrganizationRepository;
@@ -44,6 +45,7 @@ public final class AuthService {
     private final RefreshSessionRepository sessions;
     private final TokenRepository tokens;
     private final OrganizationRepository orgs;
+    private final GroupRepository groups;
     private final MembershipRepository memberships;
     private final RoleRepository roles;
     private final LoginAttemptRepository loginAttempts;
@@ -56,6 +58,7 @@ public final class AuthService {
             RefreshSessionRepository sessions,
             TokenRepository tokens,
             OrganizationRepository orgs,
+            GroupRepository groups,
             MembershipRepository memberships,
             RoleRepository roles,
             LoginAttemptRepository loginAttempts) {
@@ -66,6 +69,7 @@ public final class AuthService {
         this.sessions = sessions;
         this.tokens = tokens;
         this.orgs = orgs;
+        this.groups = groups;
         this.memberships = memberships;
         this.roles = roles;
         this.loginAttempts = loginAttempts;
@@ -83,8 +87,10 @@ public final class AuthService {
             tokens.insertEmailVerification(userId, HexSha256.hashUtf8(rawVerify), Instant.now().plus(2, ChronoUnit.DAYS));
             if (req.organizationName() != null && !req.organizationName().isBlank()) {
                 var slug = uniqueSlug(slugify(req.organizationName()));
-                var orgId = orgs.insert(req.organizationName().trim(), slug, null);
-                var memId = memberships.insert(userId, orgId, "active");
+                var orgName = req.organizationName().trim();
+                var orgId = orgs.insert(orgName, slug, null);
+                groups.insertDefault(orgId, orgName);
+                var memId = memberships.insert(userId, orgId, "active", "org_wide");
                 var ownerId =
                         roles.idByKey("owner").orElseThrow(() -> new IllegalStateException("owner role missing"));
                 memberships.addRole(memId, ownerId);

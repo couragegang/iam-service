@@ -16,7 +16,13 @@ public final class OrgModels {
     private OrgModels() {}
 
     @Serdeable
-    public record Organization(UUID id, String name, String slug, @Nullable String planTier, Instant createdAt) {}
+    public record Organization(
+            UUID id,
+            String name,
+            String slug,
+            @Nullable String planTier,
+            UUID defaultGroupId,
+            Instant createdAt) {}
 
     @Serdeable
     public record OrganizationCreateRequest(
@@ -33,8 +39,26 @@ public final class OrgModels {
             UUID userId,
             UUID orgId,
             String status,
+            String accessScope,
             List<String> roles,
             @Nullable Instant joinedAt) {}
+
+    @Serdeable
+    public record OrganizationGroup(
+            UUID id,
+            UUID orgId,
+            String name,
+            String slug,
+            boolean isDefault,
+            String status,
+            Instant createdAt) {}
+
+    @Serdeable
+    public record OrganizationGroupCreateRequest(
+            @NotBlank @Size(max = 200) String name, @NotBlank @Size(max = 100) String slug) {}
+
+    @Serdeable
+    public record OrganizationGroupListResponse(List<OrganizationGroup> items) {}
 
     @Serdeable
     public record MembershipPatchRequest(@Nullable String status, @Nullable List<String> roleKeys) {}
@@ -46,7 +70,9 @@ public final class OrgModels {
     public record Invite(
             UUID id,
             String email,
+            @Nullable UUID groupId,
             @Nullable List<String> roleKeys,
+            @Nullable List<String> groupRoleKeys,
             Instant expiresAt,
             Instant createdAt,
             @Nullable Instant acceptedAt) {}
@@ -55,13 +81,17 @@ public final class OrgModels {
     public record InviteCreateRequest(
             @NotBlank @Email String email,
             @NotEmpty List<String> roleKeys,
+            @Nullable UUID groupId,
+            @Nullable List<String> groupRoleKeys,
             @Nullable Integer ttlHours) {}
 
     @Serdeable
     public record InviteCreated(
             UUID id,
             String email,
+            @Nullable UUID groupId,
             @Nullable List<String> roleKeys,
+            @Nullable List<String> groupRoleKeys,
             Instant expiresAt,
             Instant createdAt,
             @Nullable Instant acceptedAt,

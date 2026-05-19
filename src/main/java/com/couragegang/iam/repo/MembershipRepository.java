@@ -21,17 +21,22 @@ public final class MembershipRepository {
     }
 
     public UUID insert(UUID userId, UUID orgId, String status) throws SQLException {
+        return insert(userId, orgId, status, "org_wide");
+    }
+
+    public UUID insert(UUID userId, UUID orgId, String status, String accessScope) throws SQLException {
         try (var c = dataSource.getConnection();
                 var ps = c.prepareStatement(
                         """
-                        INSERT INTO organization_memberships (user_id, org_id, status, joined_at)
-                        VALUES (?, ?, ?, CASE WHEN ? = 'active' THEN now() ELSE NULL END)
+                        INSERT INTO organization_memberships (user_id, org_id, status, access_scope, joined_at)
+                        VALUES (?, ?, ?, ?, CASE WHEN ? = 'active' THEN now() ELSE NULL END)
                         RETURNING id
                         """)) {
             ps.setObject(1, userId);
             ps.setObject(2, orgId);
             ps.setString(3, status);
-            ps.setString(4, status);
+            ps.setString(4, accessScope);
+            ps.setString(5, status);
             try (var rs = ps.executeQuery()) {
                 rs.next();
                 return rs.getObject(1, UUID.class);
@@ -43,7 +48,7 @@ public final class MembershipRepository {
         try (var c = dataSource.getConnection();
                 var ps = c.prepareStatement(
                         """
-                        SELECT m.id, m.user_id, m.org_id, m.status, m.joined_at
+                        SELECT m.id, m.user_id, m.org_id, m.status, m.access_scope, m.joined_at
                         FROM organization_memberships m
                         WHERE m.id = ? AND m.org_id = ?
                         """)) {
@@ -57,10 +62,11 @@ public final class MembershipRepository {
                 var uid = rs.getObject(2, UUID.class);
                 var oid = rs.getObject(3, UUID.class);
                 var st = rs.getString(4);
-                var jt = rs.getTimestamp(5);
+                var scope = rs.getString(5);
+                var jt = rs.getTimestamp(6);
                 var roles = loadRoleKeys(mid);
                 return Optional.of(
-                        new MembershipRow(mid, uid, oid, st, roles, jt == null ? null : jt.toInstant()));
+                        new MembershipRow(mid, uid, oid, st, scope, roles, jt == null ? null : jt.toInstant()));
             }
         }
     }
@@ -69,7 +75,7 @@ public final class MembershipRepository {
         try (var c = dataSource.getConnection();
                 var ps = c.prepareStatement(
                         """
-                        SELECT m.id, m.user_id, m.org_id, m.status, m.joined_at
+                        SELECT m.id, m.user_id, m.org_id, m.status, m.access_scope, m.joined_at
                         FROM organization_memberships m
                         WHERE m.user_id = ? AND m.org_id = ?
                         """)) {
@@ -83,10 +89,11 @@ public final class MembershipRepository {
                 var uid = rs.getObject(2, UUID.class);
                 var oid = rs.getObject(3, UUID.class);
                 var st = rs.getString(4);
-                var jt = rs.getTimestamp(5);
+                var scope = rs.getString(5);
+                var jt = rs.getTimestamp(6);
                 var roles = loadRoleKeys(mid);
                 return Optional.of(
-                        new MembershipRow(mid, uid, oid, st, roles, jt == null ? null : jt.toInstant()));
+                        new MembershipRow(mid, uid, oid, st, scope, roles, jt == null ? null : jt.toInstant()));
             }
         }
     }
@@ -95,7 +102,7 @@ public final class MembershipRepository {
         try (var c = dataSource.getConnection();
                 var ps = c.prepareStatement(
                         """
-                        SELECT m.id, m.user_id, m.org_id, m.status, m.joined_at
+                        SELECT m.id, m.user_id, m.org_id, m.status, m.access_scope, m.joined_at
                         FROM organization_memberships m
                         WHERE m.org_id = ?
                         ORDER BY m.created_at ASC
@@ -110,9 +117,10 @@ public final class MembershipRepository {
                     var uid = rs.getObject(2, UUID.class);
                     var oid = rs.getObject(3, UUID.class);
                     var st = rs.getString(4);
-                    var jt = rs.getTimestamp(5);
+                    var scope = rs.getString(5);
+                    var jt = rs.getTimestamp(6);
                     var roles = loadRoleKeys(mid);
-                    out.add(new MembershipRow(mid, uid, oid, st, roles, jt == null ? null : jt.toInstant()));
+                    out.add(new MembershipRow(mid, uid, oid, st, scope, roles, jt == null ? null : jt.toInstant()));
                 }
                 return out;
             }
@@ -265,7 +273,13 @@ public final class MembershipRepository {
     }
 
     public record MembershipRow(
-            UUID id, UUID userId, UUID orgId, String status, List<String> roleKeys, Instant joinedAt) {}
+            UUID id,
+            UUID userId,
+            UUID orgId,
+            String status,
+            String accessScope,
+            List<String> roleKeys,
+            Instant joinedAt) {}
 
     public record OrgSummaryRow(UUID orgId, String slug, String name, List<String> roles) {}
 }

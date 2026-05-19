@@ -12,6 +12,9 @@ import com.couragegang.iam.api.dto.OrgModels.Membership;
 import com.couragegang.iam.api.dto.OrgModels.MembershipPatchRequest;
 import com.couragegang.iam.api.dto.OrgModels.Organization;
 import com.couragegang.iam.api.dto.OrgModels.OrganizationCreateRequest;
+import com.couragegang.iam.api.dto.OrgModels.OrganizationGroup;
+import com.couragegang.iam.api.dto.OrgModels.OrganizationGroupCreateRequest;
+import com.couragegang.iam.api.dto.OrgModels.OrganizationGroupListResponse;
 import com.couragegang.iam.api.dto.OrgModels.OrganizationPatchRequest;
 import com.couragegang.iam.security.SecurityAttributes;
 import com.couragegang.iam.service.OrganizationService;
@@ -56,6 +59,22 @@ public final class OrganizationsController {
             @PathVariable UUID orgId,
             @Body @Valid OrganizationPatchRequest body) {
         return HttpResponse.ok(orgs.patch(UUID.fromString(userId), orgId, body));
+    }
+
+    @Get("/{orgId}/groups")
+    public HttpResponse<OrganizationGroupListResponse> orgGroupsList(
+            @RequestAttribute(SecurityAttributes.USER_ID) String userId,
+            @PathVariable UUID orgId,
+            @QueryValue(defaultValue = "50") int limit) {
+        return HttpResponse.ok(orgs.listGroups(UUID.fromString(userId), orgId, limit));
+    }
+
+    @Post("/{orgId}/groups")
+    public HttpResponse<OrganizationGroup> orgGroupsCreate(
+            @RequestAttribute(SecurityAttributes.USER_ID) String userId,
+            @PathVariable UUID orgId,
+            @Body @Valid OrganizationGroupCreateRequest body) {
+        return HttpResponse.created(orgs.createGroup(UUID.fromString(userId), orgId, body));
     }
 
     @Get("/{orgId}/members")
