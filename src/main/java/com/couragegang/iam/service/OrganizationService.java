@@ -18,6 +18,7 @@ import com.couragegang.iam.api.dto.OrgModels.OrganizationGroupCreateRequest;
 import com.couragegang.iam.api.dto.OrgModels.OrganizationGroupListResponse;
 import com.couragegang.iam.api.dto.OrgModels.OrganizationPatchRequest;
 import com.couragegang.iam.error.IamApiException;
+import com.couragegang.iam.integration.ConfigWorkspaceClient;
 import com.couragegang.iam.metrics.OutboundHttpMetrics;
 import com.couragegang.iam.repo.IdpRepository;
 import com.couragegang.iam.repo.GroupRepository;
@@ -53,6 +54,7 @@ public final class OrganizationService {
     private final InviteRepository invites;
     private final IdpRepository idps;
     private final OutboundHttpMetrics outboundHttp;
+    private final ConfigWorkspaceClient configWorkspaces;
 
     public OrganizationService(
             OrganizationRepository orgs,
@@ -61,7 +63,8 @@ public final class OrganizationService {
             RoleRepository roles,
             InviteRepository invites,
             IdpRepository idps,
-            OutboundHttpMetrics outboundHttp) {
+            OutboundHttpMetrics outboundHttp,
+            ConfigWorkspaceClient configWorkspaces) {
         this.orgs = orgs;
         this.groups = groups;
         this.memberships = memberships;
@@ -69,6 +72,7 @@ public final class OrganizationService {
         this.invites = invites;
         this.idps = idps;
         this.outboundHttp = outboundHttp;
+        this.configWorkspaces = configWorkspaces;
     }
 
     public Organization create(UUID actorId, OrganizationCreateRequest req) {
@@ -82,6 +86,7 @@ public final class OrganizationService {
             var memId = memberships.insert(actorId, orgId, "active", "org_wide");
             var ownerId = roles.idByKey("owner").orElseThrow();
             memberships.addRole(memId, ownerId);
+            configWorkspaces.bootstrapDefaultWorkspace(orgId, defaultGroupId, req.name().trim());
             return toOrg(orgs.findById(orgId).orElseThrow(), defaultGroupId);
         } catch (SQLException e) {
             throw new IllegalStateException(e);

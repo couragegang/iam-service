@@ -10,6 +10,7 @@ import com.couragegang.iam.api.dto.AuthModels.SwitchOrgRequest;
 import com.couragegang.iam.api.dto.AuthModels.VerifyEmailRequest;
 import com.couragegang.iam.config.IamProperties;
 import com.couragegang.iam.error.IamApiException;
+import com.couragegang.iam.integration.ConfigWorkspaceClient;
 import com.couragegang.iam.repo.GroupRepository;
 import com.couragegang.iam.repo.LoginAttemptRepository;
 import com.couragegang.iam.repo.MembershipRepository;
@@ -49,6 +50,7 @@ public final class AuthService {
     private final MembershipRepository memberships;
     private final RoleRepository roles;
     private final LoginAttemptRepository loginAttempts;
+    private final ConfigWorkspaceClient configWorkspaces;
 
     public AuthService(
             IamProperties props,
@@ -61,7 +63,8 @@ public final class AuthService {
             GroupRepository groups,
             MembershipRepository memberships,
             RoleRepository roles,
-            LoginAttemptRepository loginAttempts) {
+            LoginAttemptRepository loginAttempts,
+            ConfigWorkspaceClient configWorkspaces) {
         this.props = props;
         this.users = users;
         this.passwords = passwords;
@@ -73,6 +76,7 @@ public final class AuthService {
         this.memberships = memberships;
         this.roles = roles;
         this.loginAttempts = loginAttempts;
+        this.configWorkspaces = configWorkspaces;
     }
 
     public AuthTokensResponse register(RegisterRequest req) {
@@ -89,7 +93,8 @@ public final class AuthService {
                 var slug = uniqueSlug(slugify(req.organizationName()));
                 var orgName = req.organizationName().trim();
                 var orgId = orgs.insert(orgName, slug, null);
-                groups.insertDefault(orgId, orgName);
+                var defaultGroupId = groups.insertDefault(orgId, orgName);
+                configWorkspaces.bootstrapDefaultWorkspace(orgId, defaultGroupId, orgName);
                 var memId = memberships.insert(userId, orgId, "active", "org_wide");
                 var ownerId =
                         roles.idByKey("owner").orElseThrow(() -> new IllegalStateException("owner role missing"));

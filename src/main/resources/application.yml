@@ -56,6 +56,10 @@ logger:
     org.flywaydb: INFO
 
 iam:
+  config-service:
+    enabled: ${CONFIG_SERVICE_ENABLED:true}
+    base-url: ${CONFIG_SERVICE_URL:http://localhost:8084/v1/config}
+    internal-api-key: ${CONFIG_INTERNAL_API_KEY:dev-internal-key}
   jwt-secret: ${JWT_SECRET:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
   jwt-access-ttl-seconds: 900
   refresh-ttl-seconds: 2592000

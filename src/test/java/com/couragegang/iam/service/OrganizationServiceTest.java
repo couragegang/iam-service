@@ -19,6 +19,7 @@ import com.couragegang.iam.api.dto.OrgModels.MembershipPatchRequest;
 import com.couragegang.iam.api.dto.OrgModels.OrganizationCreateRequest;
 import com.couragegang.iam.api.dto.OrgModels.OrganizationPatchRequest;
 import com.couragegang.iam.error.IamApiException;
+import com.couragegang.iam.integration.ConfigWorkspaceClient;
 import com.couragegang.iam.metrics.OutboundHttpMetrics;
 import com.couragegang.iam.repo.GroupRepository;
 import com.couragegang.iam.repo.IdpRepository;
@@ -73,6 +74,9 @@ final class OrganizationServiceTest {
     @Mock
     IdpRepository idps;
 
+    @Mock
+    ConfigWorkspaceClient configWorkspaces;
+
     OrganizationService svc;
     UUID actor;
     UUID orgId;
@@ -81,7 +85,8 @@ final class OrganizationServiceTest {
     void setUp() {
         var meterRegistry = new SimpleMeterRegistry();
         var outboundHttp = new OutboundHttpMetrics(meterRegistry);
-        svc = new OrganizationService(orgRepo, groups, memberships, roles, invites, idps, outboundHttp);
+        svc = new OrganizationService(
+                orgRepo, groups, memberships, roles, invites, idps, outboundHttp, configWorkspaces);
         actor = UUID.randomUUID();
         orgId = UUID.randomUUID();
         lenient().when(roles.distinctPermissionKeysForRoleKeys(anyList())).thenReturn(ALL_PERMS);

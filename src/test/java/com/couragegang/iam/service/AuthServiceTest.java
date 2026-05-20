@@ -21,6 +21,7 @@ import com.couragegang.iam.api.dto.AuthModels.SwitchOrgRequest;
 import com.couragegang.iam.api.dto.AuthModels.VerifyEmailRequest;
 import com.couragegang.iam.config.IamProperties;
 import com.couragegang.iam.error.IamApiException;
+import com.couragegang.iam.integration.ConfigWorkspaceClient;
 import com.couragegang.iam.repo.GroupRepository;
 import com.couragegang.iam.repo.LoginAttemptRepository;
 import com.couragegang.iam.repo.MembershipRepository;
@@ -77,6 +78,9 @@ final class AuthServiceTest {
     @Mock
     LoginAttemptRepository loginAttempts;
 
+    @Mock
+    ConfigWorkspaceClient configWorkspaces;
+
     IamProperties props;
     AuthService auth;
 
@@ -84,7 +88,18 @@ final class AuthServiceTest {
     void setUp() {
         props = new IamProperties(TestSecrets.JWT_SECRET, 900, 3600, null, null, null, null, null, null);
         auth = new AuthService(
-                props, users, passwords, jwt, sessions, tokens, orgs, groups, memberships, roles, loginAttempts);
+                props,
+                users,
+                passwords,
+                jwt,
+                sessions,
+                tokens,
+                orgs,
+                groups,
+                memberships,
+                roles,
+                loginAttempts,
+                configWorkspaces);
     }
 
     @Test
