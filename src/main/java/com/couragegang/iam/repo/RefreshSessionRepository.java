@@ -94,6 +94,18 @@ public final class RefreshSessionRepository {
         }
     }
 
+    public void revokeAllForUser(UUID userId) throws SQLException {
+        try (var c = dataSource.getConnection();
+                var ps = c.prepareStatement(
+                        """
+                        UPDATE refresh_sessions SET revoked_at = now()
+                        WHERE user_id = ? AND revoked_at IS NULL
+                        """)) {
+            ps.setObject(1, userId);
+            ps.executeUpdate();
+        }
+    }
+
     public void revokeFamily(UUID familyId) throws SQLException {
         try (var c = dataSource.getConnection();
                 var ps = c.prepareStatement(

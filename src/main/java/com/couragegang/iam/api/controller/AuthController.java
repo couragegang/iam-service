@@ -34,7 +34,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @Controller("/auth")
-public final class AuthController {
+public class AuthController {
 
     private final AuthService auth;
     private final OidcService oidc;
@@ -92,7 +92,7 @@ public final class AuthController {
     @Get("/oidc/{provider}/start")
     public HttpResponse<Void> oidcStart(
             @PathVariable String provider, @Nullable @QueryValue("redirect_after") String redirectAfter) {
-        return HttpResponse.status(HttpStatus.FOUND).location(oidc.start(provider, redirectAfter));
+        return HttpResponse.redirect(oidc.start(provider, redirectAfter));
     }
 
     @Get("/oidc/{provider}/callback")
@@ -100,7 +100,7 @@ public final class AuthController {
             @PathVariable String provider,
             @Nullable @QueryValue String code,
             @Nullable @QueryValue String state) {
-        return HttpResponse.status(HttpStatus.FOUND).location(oidc.callback(provider, code, state));
+        return HttpResponse.redirect(oidc.callback(provider, code, state));
     }
 
     @Get("/sso/{orgSlug}/start")
@@ -116,17 +116,18 @@ public final class AuthController {
 
     private static InetAddress clientIp(HttpRequest<?> request) {
         var xf = request.getHeaders().get("X-Forwarded-For");
-        if (xf.isPresent() && !xf.get().isBlank()) {
-            var first = xf.get().split(",")[0].trim();
+        if (xf != null && !xf.isBlank()) {
+            var first = xf.split(",")[0].trim();
             try {
                 return InetAddress.getByName(first);
             } catch (Exception ignored) {
                 // fall through
             }
         }
-        return request.getRemoteAddress()
-                .filter(a -> a instanceof InetSocketAddress)
-                .map(a -> ((InetSocketAddress) a).getAddress())
-                .orElseGet(() -> InetAddress.getLoopbackAddress());
+        var remote = request.getRemoteAddress();
+        if (remote != null) {
+            return remote.getAddress();
+        }
+        return InetAddress.getLoopbackAddress();
     }
 }

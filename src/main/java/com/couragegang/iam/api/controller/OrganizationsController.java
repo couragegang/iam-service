@@ -33,7 +33,7 @@ import jakarta.validation.Valid;
 import java.util.UUID;
 
 @Controller("/organizations")
-public final class OrganizationsController {
+public class OrganizationsController {
 
     private final OrganizationService orgs;
 

@@ -12,8 +12,8 @@ version = "0.1.0-SNAPSHOT"
 group = "com.couragegang.iam"
 
 repositories {
-    maven { url = uri("https://maven.aliyun.com/repository/public") }
     mavenCentral()
+    maven { url = uri("https://maven.aliyun.com/repository/public") }
 }
 
 java {
@@ -36,6 +36,7 @@ dependencies {
     annotationProcessor("io.micronaut.validation:micronaut-validation-processor")
     annotationProcessor("io.micronaut.serde:micronaut-serde-processor")
 
+    implementation("io.projectreactor:reactor-core")
     implementation("io.micronaut:micronaut-http-server-netty")
     implementation("io.micronaut.validation:micronaut-validation")
     implementation("io.micronaut.sql:micronaut-jdbc-hikari")
@@ -45,16 +46,16 @@ dependencies {
     implementation("io.micronaut.serde:micronaut-serde-jackson")
     implementation("jakarta.annotation:jakarta.annotation-api")
 
-    implementation("io.micronaut.openapi:micronaut-openapi-annotations")
-    implementation("io.micronaut.openapi:micronaut-openapi-views")
+    compileOnly("io.micronaut.openapi:micronaut-openapi-annotations")
 
     implementation("io.micronaut.sql:micronaut-jdbc")
     implementation("io.micronaut:micronaut-http-client")
     implementation("com.nimbusds:nimbus-jose-jwt:9.40")
     implementation("org.springframework.security:spring-security-crypto:6.3.4")
+    implementation("commons-logging:commons-logging:1.3.4")
 
     runtimeOnly("org.yaml:snakeyaml")
-    runtimeOnly("org.postgresql:postgresql")
+    implementation("org.postgresql:postgresql")
     runtimeOnly("ch.qos.logback:logback-classic")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
 

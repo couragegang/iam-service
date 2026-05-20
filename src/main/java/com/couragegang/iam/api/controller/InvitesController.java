@@ -13,7 +13,7 @@ import jakarta.validation.Valid;
 import java.util.UUID;
 
 @Controller("/invites")
-public final class InvitesController {
+public class InvitesController {
 
     private final InviteService invites;
 

@@ -20,7 +20,7 @@ import jakarta.validation.Valid;
 import java.util.UUID;
 
 @Controller("/me")
-public final class MeController {
+public class MeController {
 
     private final UserService users;
 

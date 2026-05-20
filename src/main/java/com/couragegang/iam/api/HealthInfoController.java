@@ -8,7 +8,7 @@ import java.util.Map;
  * Простой маркер, что сервис поднят (дополнительно к встроенному /health).
  */
 @Controller
-public final class HealthInfoController {
+public class HealthInfoController {
 
     @Get("/")
     public Map<String, String> root() {

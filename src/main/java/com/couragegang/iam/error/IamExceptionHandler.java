@@ -9,7 +9,7 @@ import jakarta.inject.Singleton;
 
 @Produces
 @Singleton
-public final class IamExceptionHandler implements ExceptionHandler<IamApiException, HttpResponse<ErrorBody>> {
+public class IamExceptionHandler implements ExceptionHandler<IamApiException, HttpResponse<ErrorBody>> {
 
     @Override
     public HttpResponse<ErrorBody> handle(HttpRequest request, IamApiException exception) {

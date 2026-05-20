@@ -10,7 +10,7 @@ import io.micronaut.http.annotation.Post;
 import jakarta.validation.Valid;
 
 @Controller("/internal")
-public final class InternalController {
+public class InternalController {
 
     private final IntrospectService introspect;
 
