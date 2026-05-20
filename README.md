@@ -106,7 +106,7 @@ OpenAPI-файл упаковывается в JAR (`META-INF/swagger`) для �
 
 ## HTTP API и документация
 
-- Источник правды по путям, схемам и кодам ответов: [`openapi/openapi.yaml`](openapi/openapi.yaml).
+- **Канон контракта:** [`../api-contracts/iam/openapi.yaml`](../api-contracts/iam/openapi.yaml) (ADR-001 в `cursor-context`). Локальная копия: [`openapi/openapi.yaml`](openapi/openapi.yaml) — синхронизировать при изменении API.
 - После запуска сервиса:
   - корень: **`GET /v1/iam/`** — JSON с подсказками на Swagger UI и health;
   - Swagger UI: путь из ответа корня, типично **`/v1/iam/swagger/views/swagger-ui/index.html`**;

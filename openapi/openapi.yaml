@@ -3,7 +3,11 @@ info:
   title: IAM Service API
   version: 0.1.0
   description: |
-    Аутентификация, организации, членство и RBAC. Префикс `/v1` может навешиваться API Gateway.
+    Аутентификация, организации, группы (V4), членство и RBAC.
+    **Канонический контракт** — репозиторий `services/api-contracts` (ADR-001).
+    Префикс приложения: `/v1/iam`.
+  x-adr: cursor-context/docs/adr-001-api-contracts-openapi.md
+  x-erd: cursor-context/docs/erd-and-bounded-contexts.md#2-bc-identity--organization-iam-service
 servers:
   - url: https://api.example.com/v1/iam
     description: через gateway
@@ -397,6 +401,53 @@ paths:
                 $ref: '#/components/schemas/Organization'
         '403':
           $ref: '#/components/responses/Forbidden'
+
+  /organizations/{orgId}/groups:
+    get:
+      tags: [organizations]
+      summary: Список групп организации
+      operationId: orgGroupsList
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationGroupListResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [organizations]
+      summary: Создать группу (не default)
+      operationId: orgGroupsCreate
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationGroupCreateRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationGroup'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /organizations/{orgId}/members:
     get:
@@ -860,7 +911,7 @@ components:
 
     Organization:
       type: object
-      required: [id, name, slug, createdAt]
+      required: [id, name, slug, defaultGroupId, createdAt]
       properties:
         id:
           type: string
@@ -872,9 +923,58 @@ components:
         planTier:
           type: string
           nullable: true
+          description: Кэш plan_key из billing-service
+        defaultGroupId:
+          type: string
+          format: uuid
+          description: Группа по умолчанию (создаётся при create org)
         createdAt:
           type: string
           format: date-time
+
+    OrganizationGroup:
+      type: object
+      required: [id, orgId, name, slug, isDefault, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        orgId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        isDefault:
+          type: boolean
+        status:
+          type: string
+          enum: [active, archived]
+        createdAt:
+          type: string
+          format: date-time
+
+    OrganizationGroupCreateRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        slug:
+          type: string
+          maxLength: 100
+          description: Не может быть `default` для не-default группы
+
+    OrganizationGroupListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrganizationGroup'
 
     OrganizationCreateRequest:
       type: object
@@ -900,7 +1000,7 @@ components:
 
     Membership:
       type: object
-      required: [id, userId, orgId, status, roles, joinedAt]
+      required: [id, userId, orgId, status, accessScope, roles, joinedAt]
       properties:
         id:
           type: string
@@ -914,6 +1014,10 @@ components:
         status:
           type: string
           enum: [invited, active, suspended]
+        accessScope:
+          type: string
+          enum: [org_wide, group_scoped]
+          description: org_wide — доступ ко всем группам; group_scoped — только к группам с membership
         roles:
           type: array
           items:
@@ -957,10 +1061,20 @@ components:
         email:
           type: string
           format: email
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+          description: null — инвайт в организацию (org_wide); иначе — в группу (group_scoped)
         roleKeys:
           type: array
           items:
             type: string
+        groupRoleKeys:
+          type: array
+          items:
+            type: string
+          description: Роли в группе при groupId задан
         expiresAt:
           type: string
           format: date-time
@@ -982,6 +1096,14 @@ components:
         roleKeys:
           type: array
           minItems: 1
+          items:
+            type: string
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+        groupRoleKeys:
+          type: array
           items:
             type: string
         ttlHours:
@@ -1093,6 +1215,14 @@ components:
           type: string
           format: uuid
         orgId:
+          type: string
+          format: uuid
+          nullable: true
+        groupId:
+          type: string
+          format: uuid
+          nullable: true
+        workspaceId:
           type: string
           format: uuid
           nullable: true
