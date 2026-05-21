@@ -4,7 +4,6 @@ import com.couragegang.iam.security.JwtService.ParsedAccess;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.HttpStatus;
-import io.micronaut.http.MutableHttpRequest;
 import io.micronaut.http.MutableHttpResponse;
 import io.micronaut.http.annotation.Filter;
 import io.micronaut.http.filter.HttpServerFilter;
@@ -42,12 +41,11 @@ public class JwtAuthFilter implements HttpServerFilter {
         var raw = auth.substring("Bearer ".length()).trim();
         try {
             ParsedAccess p = jwtService.parseAndVerify(raw);
-            MutableHttpRequest<?> mut = request.mutate();
-            mut.setAttribute(SecurityAttributes.USER_ID, p.userId().toString());
+            request.setAttribute(SecurityAttributes.USER_ID, p.userId().toString());
             if (p.orgId() != null) {
-                mut.setAttribute(SecurityAttributes.ORG_ID, p.orgId().toString());
+                request.setAttribute(SecurityAttributes.ORG_ID, p.orgId().toString());
             }
-            return chain.proceed(mut);
+            return chain.proceed(request);
         } catch (Exception e) {
             return Mono.just(HttpResponse.status(HttpStatus.UNAUTHORIZED));
         }

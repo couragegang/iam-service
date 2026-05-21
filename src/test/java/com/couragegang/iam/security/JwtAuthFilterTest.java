@@ -13,7 +13,6 @@ import com.couragegang.iam.security.JwtService.ParsedAccess;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.HttpStatus;
-import io.micronaut.http.MutableHttpRequest;
 import io.micronaut.http.filter.ServerFilterChain;
 import java.time.Instant;
 import java.util.List;
@@ -84,33 +83,29 @@ final class JwtAuthFilterTest {
         var uid = UUID.randomUUID();
         var org = UUID.randomUUID();
         var req = mock(HttpRequest.class);
-        var mut = mock(MutableHttpRequest.class);
         when(req.getPath()).thenReturn("/organizations");
         when(req.getHeaders().getAuthorization()).thenReturn(Optional.of("Bearer tok"));
         when(jwt.parseAndVerify("tok"))
                 .thenReturn(new ParsedAccess(uid, org, List.of("owner"), Instant.now().plusSeconds(600)));
-        when(req.mutate()).thenReturn(mut);
-        when(chain.proceed(mut)).thenReturn(io.micronaut.core.async.publisher.Publishers.just(HttpResponse.ok("ok")));
+        when(chain.proceed(req)).thenReturn(io.micronaut.core.async.publisher.Publishers.just(HttpResponse.ok("ok")));
         var out = blockOne(filter.doFilter(req, chain));
         assertThat(out.getStatus()).isEqualTo(HttpStatus.OK);
-        verify(mut).setAttribute(SecurityAttributes.USER_ID, uid.toString());
-        verify(mut).setAttribute(SecurityAttributes.ORG_ID, org.toString());
+        verify(req).setAttribute(SecurityAttributes.USER_ID, uid.toString());
+        verify(req).setAttribute(SecurityAttributes.ORG_ID, org.toString());
     }
 
     @Test
     void validJwtWithoutOrgSkipsOrgAttribute() throws Exception {
         var uid = UUID.randomUUID();
         var req = mock(HttpRequest.class);
-        var mut = mock(MutableHttpRequest.class);
         when(req.getPath()).thenReturn("/me");
         when(req.getHeaders().getAuthorization()).thenReturn(Optional.of("Bearer t2"));
         when(jwt.parseAndVerify("t2"))
                 .thenReturn(new ParsedAccess(uid, null, List.of(), Instant.now().plusSeconds(600)));
-        when(req.mutate()).thenReturn(mut);
-        when(chain.proceed(mut)).thenReturn(io.micronaut.core.async.publisher.Publishers.just(HttpResponse.ok()));
+        when(chain.proceed(req)).thenReturn(io.micronaut.core.async.publisher.Publishers.just(HttpResponse.ok()));
         blockOne(filter.doFilter(req, chain));
-        verify(mut).setAttribute(SecurityAttributes.USER_ID, uid.toString());
-        verify(mut, never()).setAttribute(eq(SecurityAttributes.ORG_ID), anyString());
+        verify(req).setAttribute(SecurityAttributes.USER_ID, uid.toString());
+        verify(req, never()).setAttribute(eq(SecurityAttributes.ORG_ID), anyString());
     }
 
     private static HttpResponse<?> blockOne(org.reactivestreams.Publisher<? extends io.micronaut.http.MutableHttpResponse<?>> pub)

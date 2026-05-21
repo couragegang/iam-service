@@ -4,9 +4,13 @@ plugins {
     jacoco
 }
 
-jacoco {
-    toolVersion = "0.8.12"
-}
+extra["jacocoCoverageExcludes"] = listOf(
+    "**/api/dto/**",
+    "**/repo/**",
+    "**/Application.class",
+    "**/service/OidcService.class",
+)
+apply(from = rootDir.resolve("gradle/jacoco-coverage.gradle.kts"))
 
 version = "0.1.0-SNAPSHOT"
 group = "com.couragegang.iam"
@@ -68,52 +72,8 @@ dependencies {
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
 }
 
-val jacocoCoverageExcludes = listOf(
-    "**/api/dto/**",
-    "**/repo/**",
-    "**/Application.class",
-    "**/service/OidcService.class",
-)
-
 tasks.withType<Test> {
     useJUnitPlatform()
-    finalizedBy(tasks.jacocoTestReport)
-}
-
-tasks.jacocoTestReport {
-    dependsOn(tasks.test)
-    val mainClasses = layout.buildDirectory.get().asFile.resolve("classes/java/main")
-    classDirectories.setFrom(
-        fileTree(mainClasses) {
-            exclude(jacocoCoverageExcludes)
-        },
-    )
-    reports {
-        xml.required.set(true)
-        html.required.set(true)
-    }
-}
-
-tasks.jacocoTestCoverageVerification {
-    dependsOn(tasks.test)
-    val mainClasses = layout.buildDirectory.get().asFile.resolve("classes/java/main")
-    classDirectories.setFrom(
-        fileTree(mainClasses) {
-            exclude(jacocoCoverageExcludes)
-        },
-    )
-    violationRules {
-        rule {
-            limit {
-                counter = "BRANCH"
-                minimum = "0.80".toBigDecimal()
-            }
-        }
-    }
-}
-
-tasks.check {
-    dependsOn(tasks.jacocoTestCoverageVerification)
 }
 
 tasks.named<ProcessResources>("processResources") {
