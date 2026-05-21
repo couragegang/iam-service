@@ -50,6 +50,7 @@ dependencies {
 
     implementation("io.micronaut.sql:micronaut-jdbc")
     implementation("io.micronaut:micronaut-http-client")
+    implementation("com.fasterxml.jackson.core:jackson-databind")
     implementation("com.nimbusds:nimbus-jose-jwt:9.40")
     implementation("org.springframework.security:spring-security-crypto:6.3.4")
     implementation("commons-logging:commons-logging:1.3.4")

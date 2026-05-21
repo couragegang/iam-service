@@ -23,17 +23,15 @@ public final class ConfigWorkspaceClient {
     private final String baseUrl;
     private final String internalKey;
     private final HttpClient http;
-    private final ObjectMapper json;
+    private final ObjectMapper json = new ObjectMapper();
 
     public ConfigWorkspaceClient(
             @Value("${iam.config-service.enabled:true}") boolean enabled,
             @Value("${iam.config-service.base-url:http://localhost:8084/v1/config}") String baseUrl,
-            @Value("${iam.config-service.internal-api-key:dev-internal-key}") String internalKey,
-            ObjectMapper json) {
+            @Value("${iam.config-service.internal-api-key:dev-internal-key}") String internalKey) {
         this.enabled = enabled;
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.internalKey = internalKey;
-        this.json = json;
         this.http =
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     }
