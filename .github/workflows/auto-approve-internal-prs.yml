@@ -1,0 +1,16 @@
+# Copy to .github/workflows/auto-approve-internal-prs.yml in each BC repo.
+name: Auto-approve internal PRs
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  approve:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hmarr/auto-approve-action@v4
