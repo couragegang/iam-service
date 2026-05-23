@@ -5,10 +5,20 @@ on:
     branches: [main, test]
 
 jobs:
-  deploy:
-    uses: couragegang/platform/.github/workflows/deploy-vps.yml@${{ github.ref_name }}
+  deploy-test:
+    if: github.ref == 'refs/heads/test'
+    uses: couragegang/platform/.github/workflows/deploy-vps.yml@test
     with:
-      contour: ${{ github.ref == 'refs/heads/main' && 'prod' || 'test' }}
+      contour: test
+      service_repo: ${{ github.event.repository.name }}
+      sha: ${{ github.sha }}
+      trigger_repository: ${{ github.repository }}
+
+  deploy-prod:
+    if: github.ref == 'refs/heads/main'
+    uses: couragegang/platform/.github/workflows/deploy-vps.yml@main
+    with:
+      contour: prod
       service_repo: ${{ github.event.repository.name }}
       sha: ${{ github.sha }}
       trigger_repository: ${{ github.repository }}
