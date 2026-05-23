@@ -16,7 +16,7 @@ public class HealthInfoController {
                 "service", "iam-service",
                 "openapiUi", "/v1/iam/swagger/views/swagger-ui/index.html",
                 "health", "/v1/iam/health",
-                "metrics", "/v1/iam/metrics"
+                "metrics", "/v1/iam/prometheus"
         );
     }
 }

@@ -1,5 +1,6 @@
 package com.couragegang.iam.integration;
 
+import com.couragegang.iam.metrics.OutboundHttpMetrics;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micronaut.context.annotation.Value;
 import jakarta.inject.Singleton;
@@ -23,15 +24,18 @@ public final class ConfigWorkspaceClient {
     private final String baseUrl;
     private final String internalKey;
     private final HttpClient http;
+    private final OutboundHttpMetrics metrics;
     private final ObjectMapper json = new ObjectMapper();
 
     public ConfigWorkspaceClient(
             @Value("${iam.config-service.enabled:true}") boolean enabled,
             @Value("${iam.config-service.base-url:http://localhost:8084/v1/config}") String baseUrl,
-            @Value("${iam.config-service.internal-api-key:dev-internal-key}") String internalKey) {
+            @Value("${iam.config-service.internal-api-key:dev-internal-key}") String internalKey,
+            OutboundHttpMetrics metrics) {
         this.enabled = enabled;
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.internalKey = internalKey;
+        this.metrics = metrics;
         this.http =
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     }
@@ -53,7 +57,7 @@ public final class ConfigWorkspaceClient {
                             .header("X-Config-Internal-Key", internalKey)
                             .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                             .build();
-            var response = http.send(request, HttpResponse.BodyHandlers.ofString());
+            var response = metrics.send(http, request, "config", "bootstrap_default_workspace");
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 var tree = json.readTree(response.body());
                 if (tree.hasNonNull("id")) {

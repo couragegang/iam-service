@@ -10,6 +10,6 @@ final class HealthInfoControllerTest {
     void rootContainsServiceName() {
         var body = new HealthInfoController().root();
         assertThat(body.get("service")).isEqualTo("iam-service");
-        assertThat(body.get("metrics")).isEqualTo("/v1/iam/metrics");
+        assertThat(body.get("metrics")).isEqualTo("/v1/iam/prometheus");
     }
 }
