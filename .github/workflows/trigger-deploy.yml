@@ -5,25 +5,10 @@ on:
     branches: [main, test]
 
 jobs:
-  dispatch:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Request VPS deploy from platform
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.PLATFORM_DEPLOY_TOKEN }}
-          script: |
-            const contour = context.ref === 'refs/heads/main' ? 'prod' : 'test';
-            await github.rest.repos.createDispatchEvent({
-              owner: 'couragegang',
-              repo: 'platform',
-              event_type: 'deploy-vps',
-              client_payload: {
-                contour,
-                sha: context.sha,
-                repository: `${context.repo.owner}/${context.repo.repo}`,
-                ref: context.ref,
-                scope: 'single',
-              },
-            });
-            core.info(`Dispatched deploy-vps scope=single contour=${contour} from ${context.repo.owner}/${context.repo.repo}`);
+  deploy:
+    uses: couragegang/platform/.github/workflows/deploy-vps.yml@${{ github.ref_name }}
+    with:
+      contour: ${{ github.ref == 'refs/heads/main' && 'prod' || 'test' }}
+      service_repo: ${{ github.event.repository.name }}
+      sha: ${{ github.sha }}
+      trigger_repository: ${{ github.repository }}
