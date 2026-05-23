@@ -56,4 +56,15 @@ final class IntrospectServiceTest {
         var r = svc.introspect(new IntrospectRequest("nope"));
         assertThat(r.active()).isFalse();
     }
+
+    @Test
+    void validTokenWithOrgIncludesOrgId() throws Exception {
+        var uid = UUID.randomUUID();
+        var org = UUID.randomUUID();
+        var raw = jwt.mintAccess(uid, org, List.of("member"));
+        when(roles.distinctPermissionKeysForRoleKeys(List.of("member"))).thenReturn(List.of("iam.org.read"));
+        var r = svc.introspect(new IntrospectRequest(raw));
+        assertThat(r.active()).isTrue();
+        assertThat(r.orgId()).isEqualTo(org);
+    }
 }

@@ -15,7 +15,7 @@ final class IamExceptionHandlerTest {
     void mapsExceptionToResponse() {
         var ex = new IamApiException(HttpStatus.BAD_REQUEST, "CODE", "hello");
         var resp = handler.handle(mock(HttpRequest.class), ex);
-        assertThat(resp.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(resp.getStatus().getCode()).isEqualTo(HttpStatus.BAD_REQUEST.getCode());
         assertThat(resp.body()).isNotNull();
         assertThat(resp.body().code()).isEqualTo("CODE");
         assertThat(resp.body().message()).isEqualTo("hello");

@@ -342,7 +342,7 @@ final class AuthServiceTest {
         var org = UUID.randomUUID();
         when(memberships.findByUserAndOrg(uid, org))
                 .thenReturn(Optional.of(new MembershipRepository.MembershipRow(
-                        UUID.randomUUID(), uid, org, "suspended", List.of(), Instant.now())));
+                        UUID.randomUUID(), uid, org, "suspended", "org_wide", List.of(), Instant.now())));
         assertThatThrownBy(() -> auth.switchOrg(new SwitchOrgRequest(org), uid)).isInstanceOf(IamApiException.class);
     }
 

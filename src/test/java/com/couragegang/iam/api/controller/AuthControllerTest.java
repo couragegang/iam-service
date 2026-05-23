@@ -45,7 +45,7 @@ final class AuthControllerTest {
     @Test
     void loginUsesForwardedFor() throws Exception {
         var req = mock(HttpRequest.class, Answers.RETURNS_DEEP_STUBS);
-        when(req.getHeaders().get("X-Forwarded-For")).thenReturn(Optional.of("10.0.0.9, 10.0.0.1"));
+        when(req.getHeaders().get("X-Forwarded-For")).thenReturn("10.0.0.9, 10.0.0.1");
         when(auth.login(any(), eq(InetAddress.getByName("10.0.0.9")))).thenReturn(null);
         controller.login(req, new LoginRequest("a@b.co", "pw"));
         verify(auth).login(any(), eq(InetAddress.getByName("10.0.0.9")));
@@ -54,8 +54,8 @@ final class AuthControllerTest {
     @Test
     void loginInvalidForwardedForFallsBackToRemote() throws Exception {
         var req = mock(HttpRequest.class, Answers.RETURNS_DEEP_STUBS);
-        when(req.getHeaders().get("X-Forwarded-For")).thenReturn(Optional.of("not-an-ip"));
-        when(req.getRemoteAddress()).thenReturn(Optional.of(new InetSocketAddress("192.168.1.2", 4444)));
+        when(req.getHeaders().get("X-Forwarded-For")).thenReturn("not-an-ip");
+        when(req.getRemoteAddress()).thenReturn(new InetSocketAddress("192.168.1.2", 4444));
         when(auth.login(any(), eq(InetAddress.getByName("192.168.1.2")))).thenReturn(null);
         controller.login(req, new LoginRequest("a@b.co", "pw"));
     }
@@ -63,8 +63,8 @@ final class AuthControllerTest {
     @Test
     void loginNoForwardedUsesRemoteOrLoopback() throws Exception {
         var req = mock(HttpRequest.class, Answers.RETURNS_DEEP_STUBS);
-        when(req.getHeaders().get("X-Forwarded-For")).thenReturn(Optional.empty());
-        when(req.getRemoteAddress()).thenReturn(Optional.empty());
+        when(req.getHeaders().get("X-Forwarded-For")).thenReturn(null);
+        when(req.getRemoteAddress()).thenReturn(null);
         when(auth.login(any(), eq(InetAddress.getLoopbackAddress()))).thenReturn(null);
         controller.login(req, new LoginRequest("a@b.co", "pw"));
     }
@@ -73,8 +73,8 @@ final class AuthControllerTest {
     void oidcStartDelegates() {
         when(oidc.start("google", null)).thenReturn(java.net.URI.create("https://idp"));
         var resp = controller.oidcStart("google", null);
-        assertThat(resp.getStatus()).isEqualTo(HttpStatus.FOUND);
-        assertThat(resp.getHeaders().get("Location")).hasValue("https://idp");
+        assertThat(resp.getStatus().getCode()).isEqualTo(HttpStatus.MOVED_PERMANENTLY.getCode());
+        assertThat(resp.getHeaders().get("Location")).contains("idp");
     }
 
     @Test

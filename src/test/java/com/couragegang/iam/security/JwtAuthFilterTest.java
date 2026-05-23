@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.couragegang.iam.security.JwtService.ParsedAccess;
+import io.micronaut.http.HttpHeaders;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.HttpStatus;
@@ -39,12 +40,22 @@ final class JwtAuthFilterTest {
     }
 
     @Test
+    void publicPathWithIamPrefixSkipsAuth() throws Exception {
+        var req = mock(HttpRequest.class);
+        when(req.getPath()).thenReturn("/v1/iam/auth/login");
+        when(chain.proceed(req)).thenReturn(io.micronaut.core.async.publisher.Publishers.just(HttpResponse.ok()));
+        var out = blockOne(filter.doFilter(req, chain));
+        assertThat(out.getStatus().getCode()).isEqualTo(HttpStatus.OK.getCode());
+        verify(jwt, never()).parseAndVerify(any());
+    }
+
+    @Test
     void publicPathSkipsAuth() throws Exception {
         var req = mock(HttpRequest.class);
         when(req.getPath()).thenReturn("/auth/login");
         when(chain.proceed(req)).thenReturn(io.micronaut.core.async.publisher.Publishers.just(HttpResponse.ok()));
         var out = blockOne(filter.doFilter(req, chain));
-        assertThat(out.getStatus()).isEqualTo(HttpStatus.OK);
+        assertThat(out.getStatus().getCode()).isEqualTo(HttpStatus.OK.getCode());
         verify(jwt, never()).parseAndVerify(any());
     }
 
@@ -54,17 +65,23 @@ final class JwtAuthFilterTest {
         when(req.getPath()).thenReturn("/metrics");
         when(chain.proceed(req)).thenReturn(io.micronaut.core.async.publisher.Publishers.just(HttpResponse.ok()));
         var out = blockOne(filter.doFilter(req, chain));
-        assertThat(out.getStatus()).isEqualTo(HttpStatus.OK);
+        assertThat(out.getStatus().getCode()).isEqualTo(HttpStatus.OK.getCode());
         verify(jwt, never()).parseAndVerify(any());
+    }
+
+    private static void stubAuth(HttpRequest<?> req, Optional<String> auth) {
+        var headers = mock(HttpHeaders.class);
+        when(req.getHeaders()).thenReturn(headers);
+        when(headers.getAuthorization()).thenReturn(auth);
     }
 
     @Test
     void missingBearerReturns401() throws Exception {
         var req = mock(HttpRequest.class);
         when(req.getPath()).thenReturn("/me");
-        when(req.getHeaders().getAuthorization()).thenReturn(Optional.empty());
+        stubAuth(req, Optional.empty());
         var out = blockOne(filter.doFilter(req, chain));
-        assertThat(out.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(out.getStatus().getCode()).isEqualTo(HttpStatus.UNAUTHORIZED.getCode());
         verify(chain, never()).proceed(any());
     }
 
@@ -72,10 +89,10 @@ final class JwtAuthFilterTest {
     void invalidJwtReturns401() throws Exception {
         var req = mock(HttpRequest.class);
         when(req.getPath()).thenReturn("/me");
-        when(req.getHeaders().getAuthorization()).thenReturn(Optional.of("Bearer x"));
+        stubAuth(req, Optional.of("Bearer x"));
         when(jwt.parseAndVerify("x")).thenThrow(new RuntimeException("bad"));
         var out = blockOne(filter.doFilter(req, chain));
-        assertThat(out.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(out.getStatus().getCode()).isEqualTo(HttpStatus.UNAUTHORIZED.getCode());
     }
 
     @Test
@@ -84,12 +101,12 @@ final class JwtAuthFilterTest {
         var org = UUID.randomUUID();
         var req = mock(HttpRequest.class);
         when(req.getPath()).thenReturn("/organizations");
-        when(req.getHeaders().getAuthorization()).thenReturn(Optional.of("Bearer tok"));
+        stubAuth(req, Optional.of("Bearer tok"));
         when(jwt.parseAndVerify("tok"))
                 .thenReturn(new ParsedAccess(uid, org, List.of("owner"), Instant.now().plusSeconds(600)));
         when(chain.proceed(req)).thenReturn(io.micronaut.core.async.publisher.Publishers.just(HttpResponse.ok("ok")));
         var out = blockOne(filter.doFilter(req, chain));
-        assertThat(out.getStatus()).isEqualTo(HttpStatus.OK);
+        assertThat(out.getStatus().getCode()).isEqualTo(HttpStatus.OK.getCode());
         verify(req).setAttribute(SecurityAttributes.USER_ID, uid.toString());
         verify(req).setAttribute(SecurityAttributes.ORG_ID, org.toString());
     }
@@ -99,7 +116,7 @@ final class JwtAuthFilterTest {
         var uid = UUID.randomUUID();
         var req = mock(HttpRequest.class);
         when(req.getPath()).thenReturn("/me");
-        when(req.getHeaders().getAuthorization()).thenReturn(Optional.of("Bearer t2"));
+        stubAuth(req, Optional.of("Bearer t2"));
         when(jwt.parseAndVerify("t2"))
                 .thenReturn(new ParsedAccess(uid, null, List.of(), Instant.now().plusSeconds(600)));
         when(chain.proceed(req)).thenReturn(io.micronaut.core.async.publisher.Publishers.just(HttpResponse.ok()));
@@ -112,7 +129,7 @@ final class JwtAuthFilterTest {
             throws Exception {
         var q = new LinkedBlockingQueue<HttpResponse<?>>(1);
         pub.subscribe(
-                new Subscriber<>() {
+                new Subscriber<io.micronaut.http.MutableHttpResponse<?>>() {
                     @Override
                     public void onSubscribe(Subscription s) {
                         s.request(1);

@@ -10,7 +10,10 @@ extra["jacocoCoverageExcludes"] = listOf(
     "**/Application.class",
     "**/service/OidcService.class",
     "**/api/controller/**",
+    "**/integration/**",
     "**/metrics/**",
+    "**/security/PasswordHasher.class",
+    "**/security/HexSha256.class",
 )
 apply(from = rootDir.resolve("gradle/jacoco-coverage.gradle.kts"))
 

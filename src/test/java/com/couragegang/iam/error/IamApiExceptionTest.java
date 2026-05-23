@@ -11,7 +11,7 @@ final class IamApiExceptionTest {
     void exposesStatusAndBody() {
         var ex = new IamApiException(HttpStatus.CONFLICT, "CONFLICT", "msg");
         assertThat(ex.getMessage()).isEqualTo("msg");
-        assertThat(ex.status()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(ex.status().getCode()).isEqualTo(HttpStatus.CONFLICT.getCode());
         assertThat(ex.body().code()).isEqualTo("CONFLICT");
         assertThat(ex.body().message()).isEqualTo("msg");
     }

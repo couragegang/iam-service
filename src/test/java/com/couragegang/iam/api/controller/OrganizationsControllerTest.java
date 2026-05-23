@@ -1,6 +1,7 @@
 package com.couragegang.iam.api.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 
 import com.couragegang.iam.api.dto.IdpModels.OrgIdpConfigPatchRequest;
@@ -30,28 +31,29 @@ final class OrganizationsControllerTest {
         var mid = UUID.randomUUID();
         var iid = UUID.randomUUID();
         c.orgCreate(uid, new OrganizationCreateRequest("N", "slug", null));
-        verify(orgs).create(UUID.fromString(uid), any(OrganizationCreateRequest.class));
+        var actor = UUID.fromString(uid);
+        verify(orgs).create(eq(actor), any(OrganizationCreateRequest.class));
         c.orgGet(uid, oid);
-        verify(orgs).get(UUID.fromString(uid), oid);
+        verify(orgs).get(eq(actor), eq(oid));
         c.orgPatch(uid, oid, new OrganizationPatchRequest("x", null));
-        verify(orgs).patch(UUID.fromString(uid), oid, any(OrganizationPatchRequest.class));
+        verify(orgs).patch(eq(actor), eq(oid), any(OrganizationPatchRequest.class));
         c.orgMembersList(uid, oid, null, 20);
-        verify(orgs).members(UUID.fromString(uid), oid, 20);
+        verify(orgs).members(eq(actor), eq(oid), eq(20));
         c.orgMemberPatch(uid, oid, mid, new MembershipPatchRequest("active", null));
-        verify(orgs).patchMember(UUID.fromString(uid), oid, mid, any(MembershipPatchRequest.class));
+        verify(orgs).patchMember(eq(actor), eq(oid), eq(mid), any(MembershipPatchRequest.class));
         c.orgMemberDelete(uid, oid, mid);
-        verify(orgs).deleteMember(UUID.fromString(uid), oid, mid);
+        verify(orgs).deleteMember(eq(actor), eq(oid), eq(mid));
         c.orgInvitesList(uid, oid);
-        verify(orgs).listInvites(UUID.fromString(uid), oid);
+        verify(orgs).listInvites(eq(actor), eq(oid));
         c.orgInvitesCreate(uid, oid, new InviteCreateRequest("a@b.co", List.of("member"), null, null, null));
-        verify(orgs).createInvite(UUID.fromString(uid), oid, any(InviteCreateRequest.class));
+        verify(orgs).createInvite(eq(actor), eq(oid), any(InviteCreateRequest.class));
         c.orgInvitesRevoke(uid, oid, iid);
-        verify(orgs).revokeInvite(UUID.fromString(uid), oid, iid);
+        verify(orgs).revokeInvite(eq(actor), eq(oid), eq(iid));
         c.orgIdpGet(uid, oid);
-        verify(orgs).idpGet(UUID.fromString(uid), oid);
+        verify(orgs).idpGet(eq(actor), eq(oid));
         c.orgIdpPatch(uid, oid, new OrgIdpConfigPatchRequest(null, null, null, null, null, null, null, null));
-        verify(orgs).idpPatch(UUID.fromString(uid), oid, any(OrgIdpConfigPatchRequest.class));
+        verify(orgs).idpPatch(eq(actor), eq(oid), any(OrgIdpConfigPatchRequest.class));
         c.orgIdpTest(uid, oid, null);
-        verify(orgs).idpTest(UUID.fromString(uid), oid, null);
+        verify(orgs).idpTest(eq(actor), eq(oid), eq(null));
     }
 }

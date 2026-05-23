@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -117,6 +118,131 @@ final class InviteServiceTest {
         assertThatThrownBy(() -> svc.accept(uid, new InviteAcceptRequest(org, "tok")))
                 .isInstanceOf(IamApiException.class)
                 .matches(ex -> ((IamApiException) ex).status() == HttpStatus.CONFLICT);
+    }
+
+    @Test
+    void acceptGroupScopedInvite() throws Exception {
+        var uid = UUID.randomUUID();
+        var org = UUID.randomUUID();
+        var gid = UUID.randomUUID();
+        var memId = UUID.randomUUID();
+        var groupMemId = UUID.randomUUID();
+        when(users.findById(uid))
+                .thenReturn(Optional.of(new UserRepository.UserRow(uid, "a@b.co", null, "active", "A", "ru")));
+        when(invites.findPendingByOrgAndTokenHash(eq(org), anyString()))
+                .thenReturn(
+                        Optional.of(
+                                new InviteRepository.InviteAcceptData(
+                                        UUID.randomUUID(), "a@b.co", gid, List.of("member"), List.of("editor"))));
+        when(memberships.findByUserAndOrg(uid, org)).thenReturn(Optional.empty());
+        when(groups.findById(org, gid))
+                .thenReturn(
+                        Optional.of(
+                                new GroupRepository.GroupRow(
+                                        gid, org, "G", "g", false, "active", Instant.now())));
+        when(memberships.insert(uid, org, "active", "group_scoped")).thenReturn(memId);
+        when(roles.idsByKeys(List.of("member"))).thenReturn(List.of(UUID.randomUUID()));
+        when(roles.idsByKeys(List.of("editor"))).thenReturn(List.of(UUID.randomUUID()));
+        doNothing().when(memberships).replaceRoles(eq(memId), any());
+        when(groups.hasActiveMembership(uid, gid)).thenReturn(false);
+        when(groups.insertGroupMembership(org, gid, uid, "active")).thenReturn(groupMemId);
+        doNothing().when(groups).replaceGroupRoles(eq(groupMemId), any());
+        doNothing().when(invites).markAccepted(any());
+        when(memberships.findMembership(org, memId))
+                .thenReturn(
+                        Optional.of(
+                                new MembershipRepository.MembershipRow(
+                                        memId, uid, org, "active", "group_scoped", List.of("member"), Instant.now())));
+
+        var m = svc.accept(uid, new InviteAcceptRequest(org, "tok"));
+
+        assertThat(m.accessScope()).isEqualTo("group_scoped");
+        verify(groups).insertGroupMembership(org, gid, uid, "active");
+    }
+
+    @Test
+    void acceptOrgWideMemberSkipsReinsertForGroupInvite() throws Exception {
+        var uid = UUID.randomUUID();
+        var org = UUID.randomUUID();
+        var gid = UUID.randomUUID();
+        var memId = UUID.randomUUID();
+        when(users.findById(uid))
+                .thenReturn(Optional.of(new UserRepository.UserRow(uid, "a@b.co", null, "active", "A", "ru")));
+        when(invites.findPendingByOrgAndTokenHash(eq(org), anyString()))
+                .thenReturn(
+                        Optional.of(
+                                new InviteRepository.InviteAcceptData(
+                                        UUID.randomUUID(), "a@b.co", gid, List.of("member"), List.of())));
+        when(memberships.findByUserAndOrg(uid, org))
+                .thenReturn(
+                        Optional.of(
+                                new MembershipRepository.MembershipRow(
+                                        memId, uid, org, "active", "org_wide", List.of("owner"), Instant.now())));
+        when(groups.findById(org, gid))
+                .thenReturn(
+                        Optional.of(
+                                new GroupRepository.GroupRow(
+                                        gid, org, "G", "g", false, "active", Instant.now())));
+        doNothing().when(invites).markAccepted(any());
+        when(memberships.findMembership(org, memId))
+                .thenReturn(
+                        Optional.of(
+                                new MembershipRepository.MembershipRow(
+                                        memId, uid, org, "active", "org_wide", List.of("owner"), Instant.now())));
+
+        svc.accept(uid, new InviteAcceptRequest(org, "tok"));
+
+        verify(memberships, never()).insert(any(), any(), anyString(), anyString());
+        verify(groups, never()).insertGroupMembership(any(), any(), any(), any());
+        verify(invites).markAccepted(any());
+    }
+
+    @Test
+    void acceptRejectsAlreadyInGroup() throws Exception {
+        var uid = UUID.randomUUID();
+        var org = UUID.randomUUID();
+        var gid = UUID.randomUUID();
+        var memId = UUID.randomUUID();
+        when(users.findById(uid))
+                .thenReturn(Optional.of(new UserRepository.UserRow(uid, "a@b.co", null, "active", "A", "ru")));
+        when(invites.findPendingByOrgAndTokenHash(eq(org), anyString()))
+                .thenReturn(
+                        Optional.of(
+                                new InviteRepository.InviteAcceptData(
+                                        UUID.randomUUID(), "a@b.co", gid, List.of("member"), List.of())));
+        when(memberships.findByUserAndOrg(uid, org))
+                .thenReturn(
+                        Optional.of(
+                                new MembershipRepository.MembershipRow(
+                                        memId, uid, org, "active", "group_scoped", List.of("member"), Instant.now())));
+        when(groups.findById(org, gid))
+                .thenReturn(
+                        Optional.of(
+                                new GroupRepository.GroupRow(
+                                        gid, org, "G", "g", false, "active", Instant.now())));
+        when(groups.hasActiveMembership(uid, gid)).thenReturn(true);
+
+        assertThatThrownBy(() -> svc.accept(uid, new InviteAcceptRequest(org, "tok")))
+                .isInstanceOf(IamApiException.class);
+    }
+
+    @Test
+    void acceptRejectsInvalidGroup() throws Exception {
+        var uid = UUID.randomUUID();
+        var org = UUID.randomUUID();
+        var gid = UUID.randomUUID();
+        when(users.findById(uid))
+                .thenReturn(Optional.of(new UserRepository.UserRow(uid, "a@b.co", null, "active", "A", "ru")));
+        when(invites.findPendingByOrgAndTokenHash(eq(org), anyString()))
+                .thenReturn(
+                        Optional.of(
+                                new InviteRepository.InviteAcceptData(
+                                        UUID.randomUUID(), "a@b.co", gid, List.of("member"), List.of())));
+        when(memberships.findByUserAndOrg(uid, org)).thenReturn(Optional.empty());
+        when(groups.findById(org, gid)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> svc.accept(uid, new InviteAcceptRequest(org, "tok")))
+                .isInstanceOf(IamApiException.class);
     }
 
     @Test

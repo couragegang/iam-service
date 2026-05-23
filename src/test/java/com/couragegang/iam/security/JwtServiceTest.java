@@ -54,4 +54,5 @@ final class JwtServiceTest {
     void parseRejectsGarbage() {
         assertThatThrownBy(() -> jwt.parseAndVerify("not.a.jwt")).isInstanceOf(Exception.class);
     }
+
 }

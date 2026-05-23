@@ -3,6 +3,7 @@ package com.couragegang.iam.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -17,6 +18,7 @@ import com.couragegang.iam.api.dto.IdpModels.OrgIdpTestRequest;
 import com.couragegang.iam.api.dto.OrgModels.InviteCreateRequest;
 import com.couragegang.iam.api.dto.OrgModels.MembershipPatchRequest;
 import com.couragegang.iam.api.dto.OrgModels.OrganizationCreateRequest;
+import com.couragegang.iam.api.dto.OrgModels.OrganizationGroupCreateRequest;
 import com.couragegang.iam.api.dto.OrgModels.OrganizationPatchRequest;
 import com.couragegang.iam.error.IamApiException;
 import com.couragegang.iam.integration.ConfigWorkspaceClient;
@@ -82,7 +84,7 @@ final class OrganizationServiceTest {
     UUID orgId;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws SQLException {
         var meterRegistry = new SimpleMeterRegistry();
         var outboundHttp = new OutboundHttpMetrics(meterRegistry);
         svc = new OrganizationService(
@@ -130,7 +132,7 @@ final class OrganizationServiceTest {
         when(memberships.insert(actor, orgId, "active", "org_wide")).thenReturn(UUID.randomUUID());
         when(roles.idByKey("owner")).thenReturn(Optional.empty());
         assertThatThrownBy(() -> svc.create(actor, new OrganizationCreateRequest("N", "x", null)))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(java.util.NoSuchElementException.class);
     }
 
     @Test
@@ -181,6 +183,25 @@ final class OrganizationServiceTest {
     }
 
     @Test
+    void membersForbiddenWithoutReadPerm() throws Exception {
+        when(memberships.findByUserAndOrg(actor, orgId))
+                .thenReturn(
+                        Optional.of(
+                                new MembershipRepository.MembershipRow(
+                                        UUID.randomUUID(),
+                                        actor,
+                                        orgId,
+                                        "active",
+                                        "org_wide",
+                                        List.of("member"),
+                                        Instant.now())));
+        when(roles.distinctPermissionKeysForRoleKeys(List.of("member"))).thenReturn(List.of());
+        assertThatThrownBy(() -> svc.members(actor, orgId, 10))
+                .isInstanceOf(IamApiException.class)
+                .matches(ex -> ((IamApiException) ex).status() == HttpStatus.FORBIDDEN);
+    }
+
+    @Test
     void membersList() throws Exception {
         activeMember();
         var mid = UUID.randomUUID();
@@ -192,7 +213,7 @@ final class OrganizationServiceTest {
     }
 
     @Test
-    void patchMemberStatusOnly() throws Exception {
+    void patchMemberActivatesInvited() throws Exception {
         activeMember();
         var mid = UUID.randomUUID();
         var invited = new MembershipRepository.MembershipRow(
@@ -216,13 +237,29 @@ final class OrganizationServiceTest {
     }
 
     @Test
+    void patchMemberStatusOnly() throws Exception {
+        activeMember();
+        var mid = UUID.randomUUID();
+        var before =
+                new MembershipRepository.MembershipRow(
+                        mid, UUID.randomUUID(), orgId, "active", "org_wide", List.of("member"), Instant.now());
+        var after =
+                new MembershipRepository.MembershipRow(
+                        mid, UUID.randomUUID(), orgId, "suspended", "org_wide", List.of("member"), Instant.now());
+        when(memberships.findMembership(orgId, mid)).thenReturn(Optional.of(before), Optional.of(after));
+        doNothing().when(memberships).updateStatus(mid, "suspended");
+        svc.patchMember(actor, orgId, mid, new MembershipPatchRequest("suspended", null));
+        verify(memberships).updateStatus(mid, "suspended");
+        verify(memberships, never()).replaceRoles(any(), any());
+    }
+
+    @Test
     void patchMemberLastOwnerRemovalThrows() throws Exception {
         activeMember();
         var mid = UUID.randomUUID();
         var ownerOnly = new MembershipRepository.MembershipRow(
                 mid, UUID.randomUUID(), orgId, "active", "org_wide", List.of("owner"), Instant.now());
         when(memberships.findMembership(orgId, mid)).thenReturn(Optional.of(ownerOnly), Optional.of(ownerOnly));
-        when(roles.idsByKeys(List.of("member"))).thenReturn(List.of(UUID.randomUUID()));
         when(memberships.countOwnersInOrg(orgId)).thenReturn(1L);
         assertThatThrownBy(() ->
                         svc.patchMember(actor, orgId, mid, new MembershipPatchRequest(null, List.of("member"))))
@@ -293,12 +330,79 @@ final class OrganizationServiceTest {
     }
 
     @Test
+    void listGroups() throws Exception {
+        activeMember();
+        var gid = UUID.randomUUID();
+        when(groups.listByOrg(orgId, 10))
+                .thenReturn(
+                        List.of(
+                                new GroupRepository.GroupRow(
+                                        gid, orgId, "Team", "team", false, "active", Instant.now())));
+        var page = svc.listGroups(actor, orgId, 10);
+        assertThat(page.items()).hasSize(1);
+        assertThat(page.items().getFirst().slug()).isEqualTo("team");
+    }
+
+    @Test
+    void createGroupSuccess() throws Exception {
+        activeMember();
+        var gid = UUID.randomUUID();
+        when(groups.insert(orgId, "Team", "team", false)).thenReturn(gid);
+        when(groups.findById(orgId, gid))
+                .thenReturn(
+                        Optional.of(
+                                new GroupRepository.GroupRow(
+                                        gid, orgId, "Team", "team", false, "active", Instant.now())));
+        var g = svc.createGroup(actor, orgId, new OrganizationGroupCreateRequest("Team", "team"));
+        assertThat(g.slug()).isEqualTo("team");
+    }
+
+    @Test
+    void createGroupRejectsDefaultSlug() throws Exception {
+        activeMember();
+        assertThatThrownBy(
+                        () ->
+                                svc.createGroup(
+                                        actor, orgId, new OrganizationGroupCreateRequest("Default", "default")))
+                .isInstanceOf(IamApiException.class);
+    }
+
+    @Test
+    void createInviteUnknownGroup() throws Exception {
+        activeMember();
+        var gid = UUID.randomUUID();
+        when(groups.findById(orgId, gid)).thenReturn(Optional.empty());
+        assertThatThrownBy(
+                        () ->
+                                svc.createInvite(
+                                        actor,
+                                        orgId,
+                                        new InviteCreateRequest("a@b.co", List.of("member"), gid, null, null)))
+                .isInstanceOf(IamApiException.class);
+    }
+
+    @Test
     void createInviteUnknownRole() throws Exception {
         activeMember();
         when(roles.idsByKeys(List.of("x"))).thenReturn(List.of());
         assertThatThrownBy(() ->
                         svc.createInvite(actor, orgId, new InviteCreateRequest("a@b.co", List.of("x"), null, null, null)))
                 .isInstanceOf(IamApiException.class);
+    }
+
+    @Test
+    void createInviteUsesDefaultTtlWhenNull() throws Exception {
+        activeMember();
+        var iid = UUID.randomUUID();
+        when(roles.idsByKeys(List.of("member"))).thenReturn(List.of(UUID.randomUUID()));
+        when(invites.insertInvite(eq(orgId), eq(null), eq("a@b.co"), anyString(), any(), any()))
+                .thenReturn(iid);
+        doNothing().when(invites).attachRoles(eq(iid), anyList());
+        when(invites.listPending(orgId))
+                .thenReturn(List.of(new InviteRepository.InviteRow(
+                        iid, "a@b.co", null, Instant.now(), Instant.now(), null, List.of("member"), List.of())));
+        svc.createInvite(actor, orgId, new InviteCreateRequest("a@b.co", List.of("member"), null, null, null));
+        verify(invites).insertInvite(eq(orgId), eq(null), eq("a@b.co"), anyString(), any(), any());
     }
 
     @Test
@@ -314,6 +418,29 @@ final class OrganizationServiceTest {
                         iid, "a@b.co", null, Instant.now(), Instant.now(), null, List.of("member"), List.of())));
         var created = svc.createInvite(actor, orgId, new InviteCreateRequest("A@b.co", List.of("member"), null, null, 24));
         assertThat(created.email()).isEqualTo("a@b.co");
+    }
+
+    @Test
+    void createInviteWithGroup() throws Exception {
+        activeMember();
+        var gid = UUID.randomUUID();
+        var iid = UUID.randomUUID();
+        when(groups.findById(orgId, gid))
+                .thenReturn(
+                        Optional.of(
+                                new GroupRepository.GroupRow(
+                                        gid, orgId, "G", "g", false, "active", Instant.now())));
+        when(roles.idsByKeys(List.of("member"))).thenReturn(List.of(UUID.randomUUID()));
+        when(invites.insertInvite(eq(orgId), eq(gid), eq("a@b.co"), anyString(), any(), any()))
+                .thenReturn(iid);
+        doNothing().when(invites).attachRoles(eq(iid), anyList());
+        when(invites.listPending(orgId))
+                .thenReturn(List.of(new InviteRepository.InviteRow(
+                        iid, "a@b.co", gid, Instant.now(), Instant.now(), null, List.of("member"), List.of())));
+        var created =
+                svc.createInvite(
+                        actor, orgId, new InviteCreateRequest("a@b.co", List.of("member"), gid, null, 48));
+        assertThat(created.groupId()).isEqualTo(gid);
     }
 
     @Test
@@ -334,6 +461,16 @@ final class OrganizationServiceTest {
                 .isInstanceOf(IamApiException.class)
                 .matches(ex -> ((IamApiException) ex).status() == HttpStatus.NOT_FOUND);
         verify(invites).revokeForOrg(orgId, iid);
+    }
+
+    @Test
+    void idpPatchWithoutClientSecret() throws Exception {
+        activeMember();
+        doNothing().when(idps).upsert(any(), anyString(), any(), any(), eq(null), any(), anyBoolean(), anyBoolean(), eq(null));
+        var patched = new IdpRepository.IdpRow(UUID.randomUUID(), "oidc", "https://iss", "id", "m", false, false, null);
+        when(idps.findByOrg(orgId)).thenReturn(Optional.of(patched));
+        var pub = svc.idpPatch(actor, orgId, new OrgIdpConfigPatchRequest(null, "https://iss", "id", null, null, null, null, null));
+        assertThat(pub.clientId()).isEqualTo("id");
     }
 
     @Test
@@ -359,8 +496,8 @@ final class OrganizationServiceTest {
         var rid = UUID.randomUUID();
         when(roles.idByKey("member")).thenReturn(Optional.of(rid));
         doNothing().when(idps).upsert(any(), anyString(), any(), any(), any(), any(), anyBoolean(), anyBoolean(), any());
-        var row = new IdpRepository.IdpRow(UUID.randomUUID(), "oidc", "i", "c", "m", true, true, rid);
-        when(idps.findByOrg(orgId)).thenReturn(Optional.of(row));
+        var patched = new IdpRepository.IdpRow(UUID.randomUUID(), "oidc", "https://iss", "id", "https://md", true, true, rid);
+        when(idps.findByOrg(orgId)).thenReturn(Optional.of(patched));
         var pub = svc.idpPatch(
                 actor,
                 orgId,
