@@ -87,6 +87,7 @@ paths:
               $ref: '#/components/schemas/RefreshRequest'
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -181,6 +182,7 @@ paths:
               $ref: '#/components/schemas/SwitchOrgRequest'
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -300,6 +302,7 @@ paths:
       operationId: meGet
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -316,6 +319,7 @@ paths:
               $ref: '#/components/schemas/MePatchRequest'
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -345,6 +349,7 @@ paths:
       operationId: meListSessions
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -381,6 +386,7 @@ paths:
               $ref: '#/components/schemas/OrganizationCreateRequest'
       responses:
         '201':
+          description: OK
           content:
             application/json:
               schema:
@@ -397,6 +403,7 @@ paths:
         - $ref: '#/components/parameters/OrgId'
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -417,6 +424,7 @@ paths:
               $ref: '#/components/schemas/OrganizationPatchRequest'
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -440,6 +448,7 @@ paths:
             default: 50
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -462,6 +471,7 @@ paths:
               $ref: '#/components/schemas/OrganizationGroupCreateRequest'
       responses:
         '201':
+          description: OK
           content:
             application/json:
               schema:
@@ -491,6 +501,7 @@ paths:
             default: 20
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -512,6 +523,7 @@ paths:
               $ref: '#/components/schemas/MembershipPatchRequest'
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -540,6 +552,7 @@ paths:
         - $ref: '#/components/parameters/OrgId'
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -558,6 +571,7 @@ paths:
               $ref: '#/components/schemas/InviteCreateRequest'
       responses:
         '201':
+          description: OK
           content:
             application/json:
               schema:
@@ -593,6 +607,7 @@ paths:
               $ref: '#/components/schemas/InviteAcceptRequest'
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -609,6 +624,7 @@ paths:
         - $ref: '#/components/parameters/OrgId'
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -629,6 +645,7 @@ paths:
               $ref: '#/components/schemas/OrgIdpConfigPatchRequest'
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -648,6 +665,7 @@ paths:
               $ref: '#/components/schemas/OrgIdpTestRequest'
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -668,6 +686,7 @@ paths:
               $ref: '#/components/schemas/IntrospectRequest'
       responses:
         '200':
+          description: OK
           content:
             application/json:
               schema:
@@ -935,10 +954,8 @@ components:
         orgId:
           type: string
           format: uuid
-          nullable: true
         deviceLabel:
-          type: string
-          nullable: true
+          type: [string, 'null']
 
     Organization:
       type: object
@@ -952,8 +969,7 @@ components:
         slug:
           type: string
         planTier:
-          type: string
-          nullable: true
+          type: [string, 'null']
           description: Кэш plan_key из billing-service
         defaultGroupId:
           type: string
@@ -1018,8 +1034,7 @@ components:
           type: string
           pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
         planTier:
-          type: string
-          nullable: true
+          type: [string, 'null']
 
     OrganizationPatchRequest:
       type: object
@@ -1065,7 +1080,6 @@ components:
         joinedAt:
           type: string
           format: date-time
-          nullable: true
 
     MembershipPatchRequest:
       type: object
@@ -1088,8 +1102,7 @@ components:
           items:
             $ref: '#/components/schemas/Membership'
         nextCursor:
-          type: string
-          nullable: true
+          type: [string, 'null']
 
     Invite:
       type: object
@@ -1104,7 +1117,6 @@ components:
         groupId:
           type: string
           format: uuid
-          nullable: true
           description: null — инвайт в организацию (org_wide); иначе — в группу (group_scoped)
         roleKeys:
           type: array
@@ -1124,7 +1136,6 @@ components:
         acceptedAt:
           type: string
           format: date-time
-          nullable: true
 
     InviteCreateRequest:
       type: object
@@ -1141,7 +1152,6 @@ components:
         groupId:
           type: string
           format: uuid
-          nullable: true
         groupRoleKeys:
           type: array
           items:
@@ -1181,21 +1191,17 @@ components:
           type: string
           enum: [oidc, saml]
         issuer:
-          type: string
-          nullable: true
+          type: [string, 'null']
         clientId:
-          type: string
-          nullable: true
+          type: [string, 'null']
         metadataUrl:
-          type: string
-          nullable: true
+          type: [string, 'null']
         enabled:
           type: boolean
         jitProvisioning:
           type: boolean
         defaultRoleKey:
-          type: string
-          nullable: true
+          type: [string, 'null']
 
     OrgIdpConfigPatchRequest:
       type: object
@@ -1234,8 +1240,7 @@ components:
         message:
           type: string
         issuerResolved:
-          type: string
-          nullable: true
+          type: [string, 'null']
 
     IntrospectRequest:
       type: object
@@ -1254,28 +1259,22 @@ components:
         sub:
           type: string
           format: uuid
-          nullable: true
           description: userId при active=true
         orgId:
           type: string
           format: uuid
-          nullable: true
         scope:
-          type: string
-          nullable: true
+          type: [string, 'null']
           description: Например openid
         roles:
           type: array
           items:
-            type: string
-          nullable: true
+            type: [string, 'null']
         permissions:
           type: array
           items:
-            type: string
-          nullable: true
+            type: [string, 'null']
         exp:
           type: integer
           format: int64
-          nullable: true
           description: Unix epoch seconds
