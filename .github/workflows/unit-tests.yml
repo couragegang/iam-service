@@ -1,0 +1,28 @@
+# Copy to services/<bc>/.github/workflows/unit-tests.yml
+name: Unit tests
+
+on:
+  pull_request:
+    branches: [test, main]
+  push:
+    branches: [test, main]
+
+concurrency:
+  group: unit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gradle:
+    name: gradle
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Gradle test + JaCoCo (branch >= 80%)
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/app" \
+            -w /app \
+            gradle:8.10.2-jdk21 \
+            gradle test jacocoTestCoverageVerification --no-daemon -q

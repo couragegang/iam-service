@@ -1,0 +1,99 @@
+# Copy to services/<bc>/.github/workflows/functional-tests.yml
+# Replace iam and iam-service (e.g. iam / iam-service).
+name: Functional tests
+
+on:
+  pull_request:
+    branches: [test, main]
+  push:
+    branches: [test, main]
+
+concurrency:
+  group: functional-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SERVICE_ID: iam
+  SERVICE_DIR: iam-service
+
+jobs:
+  pytest:
+    name: pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: test
+    env:
+      DEPLOY_CONTOUR: test
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      SECRETS_ENCRYPTION_KEY: ${{ secrets.SECRETS_ENCRYPTION_KEY }}
+      CONFIG_INTERNAL_API_KEY: ${{ secrets.CONFIG_INTERNAL_API_KEY }}
+      POLICY_INTERNAL_API_KEY: ${{ secrets.POLICY_INTERNAL_API_KEY }}
+      SECRETS_INTERNAL_API_KEY: ${{ secrets.SECRETS_INTERNAL_API_KEY }}
+      AUDIT_INTERNAL_API_KEY: ${{ secrets.AUDIT_INTERNAL_API_KEY }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: couragegang/platform
+          path: platform
+          ref: ${{ github.event.pull_request.base.ref || github.ref_name }}
+
+      - name: Prepare services tree
+        env:
+          PLATFORM_ROOT: ${{ github.workspace }}/platform
+          SERVICES_ROOT: ${{ github.workspace }}/services
+        run: |
+          chmod +x platform/scripts/*.sh
+          platform/scripts/prepare-services-tree.sh "${{ env.SERVICE_DIR }}"
+
+      - name: Resolve test suite (smoke vs regress)
+        id: suite
+        run: |
+          source platform/scripts/resolve-functional-suite.sh
+          echo "suite=$SUITE" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare runtime secrets
+        working-directory: platform
+        run: ./scripts/fetch-build-secrets.sh test
+
+      - name: Start platform stack
+        working-directory: platform
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          docker compose up -d --build
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/v1/iam/health \
+              && curl -sf http://localhost:8082/v1/bff/health; then
+              echo "Stack healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose ps
+          docker compose logs --tail=60
+          exit 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run pytest (${{ steps.suite.outputs.suite }})
+        env:
+          PLATFORM_ROOT: ${{ github.workspace }}/platform
+          SERVICES_ROOT: ${{ github.workspace }}/services
+          SUITE: ${{ steps.suite.outputs.suite }}
+          SERVICE_ID: ${{ env.SERVICE_ID }}
+        run: platform/scripts/run-functional-tests.sh
+
+      - name: Compose logs on failure
+        if: failure()
+        working-directory: platform
+        run: docker compose logs --tail=100
+
+      - name: Tear down
+        if: always()
+        working-directory: platform
+        run: docker compose down -v
