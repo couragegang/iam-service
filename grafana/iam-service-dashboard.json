@@ -839,16 +839,16 @@
   "templating": {
     "list": [
       {
-        "current": { "selected": false, "text": "Prometheus", "value": "Prometheus" },
+        "current": { "selected": true, "text": "Prometheus-Prod", "value": "prometheus-prod" },
         "hide": 0,
         "includeAll": false,
-        "label": "Prometheus",
+        "label": "Contour (Prometheus)",
         "multi": false,
         "name": "datasource",
         "options": [],
         "query": "prometheus",
         "refresh": 1,
-        "regex": "",
+        "regex": "/Prometheus-(Test|Prod)/",
         "skipUrlSync": false,
         "type": "datasource"
       },
