@@ -1,10 +1,11 @@
 openapi: 3.1.0
 info:
   title: IAM Service API
-  version: 0.1.0
+  version: 0.1.1
   description: |
     Аутентификация, организации, группы (V4), членство и RBAC.
     **Канонический контракт** — репозиторий `services/api-contracts` (ADR-001).
+    Копия для сервиса: `iam-service/openapi/openapi.yaml` (синхронизация — `scripts/sync-iam-openapi.ps1`).
     Префикс приложения: `/v1/iam`.
   x-adr: cursor-context/docs/adr-001-api-contracts-openapi.md
   x-erd: cursor-context/docs/erd-and-bounded-contexts.md#2-bc-identity--organization-iam-service
@@ -17,8 +18,10 @@ tags:
   - name: auth
   - name: me
   - name: organizations
+  - name: invites
   - name: internal
   - name: idp
+  - name: health
 
 security:
   - bearerAuth: []
@@ -198,6 +201,13 @@ paths:
           schema:
             type: string
             examples: [google, github]
+        - name: redirect_after
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uri
+          description: URL приложения после успешного OIDC (токены в fragment `#access_token=…`)
       responses:
         '302':
           description: Redirect
@@ -239,8 +249,12 @@ paths:
           schema:
             type: string
       responses:
-        '302':
-          description: Redirect на IdP
+        '501':
+          description: SAML SSO не реализован (MVP)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
 
   /auth/sso/{orgSlug}/acs:
     post:
@@ -262,8 +276,22 @@ paths:
               type: object
               additionalProperties: true
       responses:
-        '302':
-          description: Redirect в приложение
+        '501':
+          description: SAML SSO не реализован (MVP)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+
+  /health:
+    get:
+      tags: [health]
+      security: []
+      summary: Health check (Micronaut management)
+      operationId: healthCheck
+      responses:
+        '200':
+          description: UP
 
   /me:
     get:
@@ -320,13 +348,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/RefreshSessionPublic'
+                $ref: '#/components/schemas/RefreshSessionListResponse'
 
   /me/sessions/{sessionId}:
     delete:
@@ -521,13 +543,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Invite'
+                $ref: '#/components/schemas/InviteListResponse'
     post:
       tags: [organizations]
       summary: Создать инвайт
@@ -566,8 +582,8 @@ paths:
 
   /invites/accept:
     post:
-      tags: [organizations]
-      summary: Принять инвайт (токен из письма; отдельный путь без конфликта с inviteId)
+      tags: [invites]
+      summary: Принять инвайт (Bearer + orgId и token из письма)
       operationId: invitesAccept
       requestBody:
         required: true
@@ -709,6 +725,12 @@ components:
             $ref: '#/components/schemas/ErrorBody'
     NotFound:
       description: Не найдено
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    NotImplemented:
+      description: Не реализовано (MVP)
       content:
         application/json:
           schema:
@@ -888,9 +910,18 @@ components:
           type: string
           minLength: 10
 
+    RefreshSessionListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RefreshSessionPublic'
+
     RefreshSessionPublic:
       type: object
-      required: [id, createdAt, expiresAt, orgId]
+      required: [id, createdAt, expiresAt]
       properties:
         id:
           type: string
@@ -998,9 +1029,18 @@ components:
         slug:
           type: string
 
+    InviteListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invite'
+
     Membership:
       type: object
-      required: [id, userId, orgId, status, accessScope, roles, joinedAt]
+      required: [id, userId, orgId, status, accessScope, roles]
       properties:
         id:
           type: string
@@ -1207,36 +1247,35 @@ components:
 
     IntrospectResponse:
       type: object
-      required: [active, sub]
+      required: [active]
       properties:
         active:
           type: boolean
         sub:
           type: string
           format: uuid
+          nullable: true
+          description: userId при active=true
         orgId:
-          type: string
-          format: uuid
-          nullable: true
-        groupId:
-          type: string
-          format: uuid
-          nullable: true
-        workspaceId:
           type: string
           format: uuid
           nullable: true
         scope:
           type: string
           nullable: true
+          description: Например openid
         roles:
           type: array
           items:
             type: string
+          nullable: true
         permissions:
           type: array
           items:
             type: string
+          nullable: true
         exp:
           type: integer
+          format: int64
           nullable: true
+          description: Unix epoch seconds
