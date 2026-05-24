@@ -80,6 +80,41 @@ public final class GroupRepository {
         }
     }
 
+    public List<GroupRow> listForUser(UUID orgId, UUID userId, boolean orgWide, int limit) throws SQLException {
+        var sql =
+                """
+                SELECT g.id, g.org_id, g.name, g.slug, g.is_default, g.status, g.created_at
+                FROM organization_groups g
+                WHERE g.org_id = ? AND g.status = 'active'
+                """;
+        if (!orgWide) {
+            sql +=
+                    """
+                     AND EXISTS (
+                       SELECT 1 FROM group_memberships gm
+                       WHERE gm.group_id = g.id AND gm.user_id = ? AND gm.status = 'active'
+                     )
+                    """;
+        }
+        sql += " ORDER BY g.is_default DESC, g.name ASC LIMIT ?";
+        try (var c = dataSource.getConnection();
+                var ps = c.prepareStatement(sql)) {
+            var idx = 1;
+            ps.setObject(idx++, orgId);
+            if (!orgWide) {
+                ps.setObject(idx++, userId);
+            }
+            ps.setInt(idx, limit);
+            try (var rs = ps.executeQuery()) {
+                var out = new ArrayList<GroupRow>();
+                while (rs.next()) {
+                    out.add(mapRow(rs));
+                }
+                return out;
+            }
+        }
+    }
+
     public List<GroupRow> listByOrg(UUID orgId, int limit) throws SQLException {
         try (var c = dataSource.getConnection();
                 var ps = c.prepareStatement(

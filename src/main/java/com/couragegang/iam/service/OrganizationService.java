@@ -226,6 +226,7 @@ public final class OrganizationService {
                 invites.attachGroupRoles(inviteId, groupRoleIds);
             }
             var row = invites.listPending(orgId).stream().filter(x -> x.id().equals(inviteId)).findFirst().orElseThrow();
+            var acceptUrlHint = "/accept-invite?orgId=" + orgId + "&token=" + raw;
             return new InviteCreated(
                     row.id(),
                     row.email(),
@@ -235,7 +236,7 @@ public final class OrganizationService {
                     row.expiresAt(),
                     row.createdAt(),
                     row.acceptedAt(),
-                    null);
+                    acceptUrlHint);
         } catch (SQLException e) {
             throw new IllegalStateException(e);
         }
@@ -258,6 +259,19 @@ public final class OrganizationService {
             var m = requireActiveMember(actorId, orgId);
             requirePerm(m, "iam.group.read");
             var rows = groups.listByOrg(orgId, limit);
+            var items = rows.stream().map(OrganizationService::toGroup).toList();
+            return new OrganizationGroupListResponse(items);
+        } catch (SQLException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** Группы, доступные текущему пользователю в организации (org_wide — все активные). */
+    public OrganizationGroupListResponse listMyGroups(UUID actorId, UUID orgId, int limit) {
+        try {
+            var m = requireActiveMember(actorId, orgId);
+            var orgWide = "org_wide".equals(m.accessScope());
+            var rows = groups.listForUser(orgId, actorId, orgWide, limit);
             var items = rows.stream().map(OrganizationService::toGroup).toList();
             return new OrganizationGroupListResponse(items);
         } catch (SQLException e) {

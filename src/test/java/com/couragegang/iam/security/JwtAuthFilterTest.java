@@ -69,6 +69,46 @@ final class JwtAuthFilterTest {
         verify(jwt, never()).parseAndVerify(any());
     }
 
+    @Test
+    void healthAndSwaggerPathsSkipAuth() throws Exception {
+        for (var path : List.of("/v1/iam/health", "/v1/iam/swagger/ui", "/v1/iam/auth/oidc/google")) {
+            var req = mock(HttpRequest.class);
+            when(req.getPath()).thenReturn(path);
+            when(chain.proceed(req)).thenReturn(io.micronaut.core.async.publisher.Publishers.just(HttpResponse.ok()));
+            var out = blockOne(filter.doFilter(req, chain));
+            assertThat(out.getStatus().getCode()).isEqualTo(HttpStatus.OK.getCode());
+        }
+        verify(jwt, never()).parseAndVerify(any());
+    }
+
+    @Test
+    void iamRootPathSkipsAuth() throws Exception {
+        var req = mock(HttpRequest.class);
+        when(req.getPath()).thenReturn("/v1/iam");
+        when(chain.proceed(req)).thenReturn(io.micronaut.core.async.publisher.Publishers.just(HttpResponse.ok()));
+        blockOne(filter.doFilter(req, chain));
+        verify(jwt, never()).parseAndVerify(any());
+    }
+
+    @Test
+    void internalPathSkipsAuth() throws Exception {
+        var req = mock(HttpRequest.class);
+        when(req.getPath()).thenReturn("/v1/iam/internal/hooks");
+        when(chain.proceed(req)).thenReturn(io.micronaut.core.async.publisher.Publishers.just(HttpResponse.ok()));
+        blockOne(filter.doFilter(req, chain));
+        verify(jwt, never()).parseAndVerify(any());
+    }
+
+    @Test
+    void nonBearerAuthorizationReturns401() throws Exception {
+        var req = mock(HttpRequest.class);
+        when(req.getPath()).thenReturn("/me");
+        stubAuth(req, Optional.of("Basic dXNlcjpwYXNz"));
+        var out = blockOne(filter.doFilter(req, chain));
+        assertThat(out.getStatus().getCode()).isEqualTo(HttpStatus.UNAUTHORIZED.getCode());
+        verify(chain, never()).proceed(any());
+    }
+
     private static void stubAuth(HttpRequest<?> req, Optional<String> auth) {
         var headers = mock(HttpHeaders.class);
         when(req.getHeaders()).thenReturn(headers);

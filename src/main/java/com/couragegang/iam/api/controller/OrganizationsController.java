@@ -47,6 +47,14 @@ public class OrganizationsController {
         return HttpResponse.created(orgs.create(UUID.fromString(userId), body));
     }
 
+    @Get("/{orgId}/my-groups")
+    public HttpResponse<OrganizationGroupListResponse> orgMyGroupsList(
+            @RequestAttribute(SecurityAttributes.USER_ID) String userId,
+            @PathVariable UUID orgId,
+            @QueryValue(defaultValue = "50") int limit) {
+        return HttpResponse.ok(orgs.listMyGroups(UUID.fromString(userId), orgId, limit));
+    }
+
     @Get("/{orgId}")
     public HttpResponse<Organization> orgGet(
             @RequestAttribute(SecurityAttributes.USER_ID) String userId, @PathVariable UUID orgId) {

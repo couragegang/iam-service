@@ -89,19 +89,9 @@ public final class AuthService {
             users.insertPassword(userId, passwords.hash(req.password()));
             var rawVerify = randomUrlToken();
             tokens.insertEmailVerification(userId, HexSha256.hashUtf8(rawVerify), Instant.now().plus(2, ChronoUnit.DAYS));
-            if (req.organizationName() != null && !req.organizationName().isBlank()) {
-                var slug = uniqueSlug(slugify(req.organizationName()));
-                var orgName = req.organizationName().trim();
-                var orgId = orgs.insert(orgName, slug, null);
-                var defaultGroupId = groups.insertDefault(orgId, orgName);
-                configWorkspaces.bootstrapDefaultWorkspace(orgId, defaultGroupId, orgName);
-                var memId = memberships.insert(userId, orgId, "active", "org_wide");
-                var ownerId =
-                        roles.idByKey("owner").orElseThrow(() -> new IllegalStateException("owner role missing"));
-                memberships.addRole(memId, ownerId);
-                return issueTokens(userId, orgId, null);
-            }
-            return issueTokens(userId, null, null);
+            var orgName = resolveRegistrationOrgName(req);
+            var orgId = provisionNewOrganization(userId, orgName);
+            return issueTokens(userId, orgId, null);
         } catch (SQLException e) {
             throw new IllegalStateException(e);
         }
@@ -122,7 +112,7 @@ public final class AuthService {
                 throw new IamApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "invalid credentials");
             }
             loginAttempts.insert(email, clientIp, true);
-            return issueTokens(uid, null, null);
+            return issueTokens(uid, resolveDefaultOrgId(uid), null);
         } catch (SQLException e) {
             throw new IllegalStateException(e);
         }
@@ -246,6 +236,34 @@ public final class AuthService {
         var buf = new byte[32];
         RND.nextBytes(buf);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(buf);
+    }
+
+    private UUID resolveDefaultOrgId(UUID userId) throws SQLException {
+        var orgs = memberships.listOrgsForUser(userId);
+        return orgs.isEmpty() ? null : orgs.getFirst().orgId();
+    }
+
+    private static String resolveRegistrationOrgName(RegisterRequest req) {
+        if (req.organizationName() != null && !req.organizationName().isBlank()) {
+            return req.organizationName().trim();
+        }
+        var fromDisplay = req.displayName().trim();
+        if (!fromDisplay.isBlank()) {
+            return fromDisplay;
+        }
+        var local = req.email().trim().toLowerCase(Locale.ROOT).split("@")[0];
+        return local.isBlank() ? "Organization" : local;
+    }
+
+    private UUID provisionNewOrganization(UUID userId, String orgName) throws SQLException {
+        var slug = uniqueSlug(slugify(orgName));
+        var orgId = orgs.insert(orgName, slug, null);
+        var defaultGroupId = groups.insertDefault(orgId, orgName);
+        configWorkspaces.bootstrapDefaultWorkspace(orgId, defaultGroupId, orgName);
+        var memId = memberships.insert(userId, orgId, "active", "org_wide");
+        var ownerId = roles.idByKey("owner").orElseThrow(() -> new IllegalStateException("owner role missing"));
+        memberships.addRole(memId, ownerId);
+        return orgId;
     }
 
     private static String slugify(String name) {

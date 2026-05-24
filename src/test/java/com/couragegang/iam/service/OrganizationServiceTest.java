@@ -92,6 +92,9 @@ final class OrganizationServiceTest {
         actor = UUID.randomUUID();
         orgId = UUID.randomUUID();
         lenient().when(roles.distinctPermissionKeysForRoleKeys(anyList())).thenReturn(ALL_PERMS);
+        lenient()
+                .when(configWorkspaces.bootstrapDefaultWorkspace(any(), any(), anyString()))
+                .thenReturn(Optional.empty());
     }
 
     private void activeMember() throws SQLException {
@@ -122,6 +125,8 @@ final class OrganizationServiceTest {
         var org = svc.create(actor, new OrganizationCreateRequest("Co", "newco", null));
         assertThat(org.slug()).isEqualTo("newco");
         assertThat(org.defaultGroupId()).isEqualTo(defaultGroup);
+        verify(configWorkspaces).bootstrapDefaultWorkspace(newOrg, defaultGroup, "Co");
+        verify(memberships).addRole(any(), any());
     }
 
     @Test

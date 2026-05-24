@@ -10,6 +10,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.atLeastOnce;
 
 import com.couragegang.iam.TestSecrets;
 import com.couragegang.iam.api.dto.AuthModels.ForgotPasswordRequest;
@@ -87,6 +88,9 @@ final class AuthServiceTest {
     @BeforeEach
     void setUp() {
         props = new IamProperties(TestSecrets.JWT_SECRET, 900, 3600, null, null, null, null, null, null);
+        lenient()
+                .when(configWorkspaces.bootstrapDefaultWorkspace(any(), any(), anyString()))
+                .thenReturn(Optional.empty());
         auth = new AuthService(
                 props,
                 users,
@@ -112,20 +116,29 @@ final class AuthServiceTest {
     }
 
     @Test
-    void registerWithoutOrg() throws Exception {
+    void registerWithoutOrgNameCreatesOrgFromDisplayName() throws Exception {
         var uid = UUID.randomUUID();
+        var orgId = UUID.randomUUID();
+        var memId = UUID.randomUUID();
+        var ownerRole = UUID.randomUUID();
         when(users.findActiveIdByEmailLower("u@x.co")).thenReturn(Optional.empty());
         when(users.insertUser(eq("u@x.co"), eq("N"), eq("ru"))).thenReturn(uid);
         when(passwords.hash("pw-long-12")).thenReturn("hash");
         doNothing().when(tokens).insertEmailVerification(any(), anyString(), any());
-        when(jwt.mintAccess(eq(uid), eq(null), eq(List.of()))).thenReturn("access");
-        when(sessions.insert(any(), eq(null), any(), anyString(), any(), anyString()))
+        when(orgs.findIdBySlugLower("n")).thenReturn(Optional.empty());
+        when(orgs.insert(eq("N"), eq("n"), eq(null))).thenReturn(orgId);
+        when(groups.insertDefault(orgId, "N")).thenReturn(UUID.randomUUID());
+        when(memberships.insert(uid, orgId, "active", "org_wide")).thenReturn(memId);
+        when(roles.idByKey("owner")).thenReturn(Optional.of(ownerRole));
+        when(jwt.mintAccess(eq(uid), eq(orgId), eq(List.of()))).thenReturn("access");
+        when(sessions.insert(any(), eq(orgId), any(), anyString(), any(), anyString()))
                 .thenReturn(new RefreshSessionRepository.SessionRow(
-                        UUID.randomUUID(), uid, null, UUID.randomUUID(), Instant.now(), Instant.now(), "h"));
+                        UUID.randomUUID(), uid, orgId, UUID.randomUUID(), Instant.now(), Instant.now(), "h"));
         var req = new RegisterRequest("U@x.co", "pw-long-12", "N", null);
         var tok = auth.register(req);
         assertThat(tok.accessToken()).isEqualTo("access");
-        verify(memberships, never()).insert(any(), any(), anyString(), anyString());
+        verify(orgs).insert(eq("N"), eq("n"), eq(null));
+        verify(configWorkspaces).bootstrapDefaultWorkspace(eq(orgId), any(), eq("N"));
     }
 
     @Test
@@ -150,6 +163,8 @@ final class AuthServiceTest {
         var req = new RegisterRequest("O@x.co", "pw-long-12", "N", "Acme");
         var out = auth.register(req);
         assertThat(out.accessToken()).isEqualTo("jwt");
+        verify(configWorkspaces).bootstrapDefaultWorkspace(eq(orgId), any(), eq("Acme"));
+        verify(memberships).addRole(any(), eq(ownerRole));
     }
 
     @Test
@@ -191,12 +206,34 @@ final class AuthServiceTest {
     }
 
     @Test
+    void loginPicksDefaultOrg() throws Exception {
+        var uid = UUID.randomUUID();
+        var orgId = UUID.randomUUID();
+        when(users.findActiveIdByEmailLower("m@y.co")).thenReturn(Optional.of(uid));
+        when(users.findPasswordHash(uid)).thenReturn(Optional.of("hash"));
+        when(passwords.matches("good", "hash")).thenReturn(true);
+        doNothing().when(loginAttempts).insert(eq("m@y.co"), any(), eq(true));
+        when(memberships.listOrgsForUser(uid))
+                .thenReturn(List.of(new MembershipRepository.OrgSummaryRow(orgId, "acme", "Acme", List.of("owner"))));
+        when(memberships.findByUserAndOrg(uid, orgId))
+                .thenReturn(Optional.of(new MembershipRepository.MembershipRow(
+                        UUID.randomUUID(), uid, orgId, "active", "org_wide", List.of("owner"), Instant.now())));
+        when(jwt.mintAccess(eq(uid), eq(orgId), eq(List.of("owner")))).thenReturn("a");
+        when(sessions.insert(any(), eq(orgId), any(), anyString(), any(), anyString()))
+                .thenReturn(new RefreshSessionRepository.SessionRow(
+                        UUID.randomUUID(), uid, orgId, UUID.randomUUID(), Instant.now(), Instant.now(), "h"));
+        auth.login(new LoginRequest("m@y.co", "good"), InetAddress.getLoopbackAddress());
+        verify(jwt).mintAccess(eq(uid), eq(orgId), eq(List.of("owner")));
+    }
+
+    @Test
     void loginSuccess() throws Exception {
         var uid = UUID.randomUUID();
         when(users.findActiveIdByEmailLower("ok@y.co")).thenReturn(Optional.of(uid));
         when(users.findPasswordHash(uid)).thenReturn(Optional.of("hash"));
         when(passwords.matches("good", "hash")).thenReturn(true);
         doNothing().when(loginAttempts).insert(eq("ok@y.co"), any(), eq(true));
+        when(memberships.listOrgsForUser(uid)).thenReturn(List.of());
         when(jwt.mintAccess(eq(uid), eq(null), eq(List.of()))).thenReturn("a");
         when(sessions.insert(any(), eq(null), any(), anyString(), any(), anyString()))
                 .thenReturn(new RefreshSessionRepository.SessionRow(
@@ -401,17 +438,23 @@ final class AuthServiceTest {
     }
 
     @Test
-    void registerOrgNameBlankSkipsOrg() throws Exception {
+    void registerBlankOrgNameUsesDisplayName() throws Exception {
         var uid = UUID.randomUUID();
+        var orgId = UUID.randomUUID();
         when(users.findActiveIdByEmailLower("b@z.co")).thenReturn(Optional.empty());
-        when(users.insertUser(eq("b@z.co"), anyString(), eq("ru"))).thenReturn(uid);
+        when(users.insertUser(eq("b@z.co"), eq("N"), eq("ru"))).thenReturn(uid);
         when(passwords.hash(anyString())).thenReturn("h");
         doNothing().when(tokens).insertEmailVerification(any(), anyString(), any());
-        when(jwt.mintAccess(eq(uid), eq(null), eq(List.of()))).thenReturn("j");
-        when(sessions.insert(any(), eq(null), any(), anyString(), any(), anyString()))
+        when(orgs.findIdBySlugLower("n")).thenReturn(Optional.empty());
+        when(orgs.insert(eq("N"), eq("n"), eq(null))).thenReturn(orgId);
+        when(groups.insertDefault(orgId, "N")).thenReturn(UUID.randomUUID());
+        when(memberships.insert(uid, orgId, "active", "org_wide")).thenReturn(UUID.randomUUID());
+        when(roles.idByKey("owner")).thenReturn(Optional.of(UUID.randomUUID()));
+        when(jwt.mintAccess(eq(uid), eq(orgId), eq(List.of()))).thenReturn("j");
+        when(sessions.insert(any(), eq(orgId), any(), anyString(), any(), anyString()))
                 .thenReturn(new RefreshSessionRepository.SessionRow(
-                        UUID.randomUUID(), uid, null, UUID.randomUUID(), Instant.now(), Instant.now(), "h"));
+                        UUID.randomUUID(), uid, orgId, UUID.randomUUID(), Instant.now(), Instant.now(), "h"));
         auth.register(new RegisterRequest("B@z.co", "pw-long-12", "N", "   "));
-        verify(orgs, never()).insert(anyString(), anyString(), any());
+        verify(orgs).insert(eq("N"), eq("n"), eq(null));
     }
 }
