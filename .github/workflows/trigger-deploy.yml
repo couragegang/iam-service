@@ -1,24 +1,59 @@
+# Скопировать в каждый BC: .github/workflows/trigger-deploy.yml
+# VPS_* и build secrets — только в platform Environment.
+# В каждом BC: Repository secret PLATFORM_DISPATCH_TOKEN (PAT → Actions write на couragegang/platform).
+
 name: Trigger platform deploy
 
 on:
   push:
     branches: [main, test]
 
+permissions:
+  contents: read
+
 jobs:
   deploy-test:
     if: github.ref == 'refs/heads/test'
-    uses: couragegang/platform/.github/workflows/deploy-vps.yml@test
-    with:
-      contour: test
-      service_repo: ${{ github.event.repository.name }}
-      sha: ${{ github.sha }}
-      trigger_repository: ${{ github.repository }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run platform deploy-vps (test)
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PLATFORM_DISPATCH_TOKEN }}
+          script: |
+            const contour = 'test';
+            await github.rest.actions.createWorkflowDispatch({
+              owner: 'couragegang',
+              repo: 'platform',
+              workflow_id: 'deploy-vps.yml',
+              ref: 'test',
+              inputs: {
+                contour,
+                deploy_scope: 'single',
+                service_repo: context.repo.repo,
+                image_tag: `${context.sha}-${contour}`,
+              },
+            });
 
   deploy-prod:
     if: github.ref == 'refs/heads/main'
-    uses: couragegang/platform/.github/workflows/deploy-vps.yml@main
-    with:
-      contour: prod
-      service_repo: ${{ github.event.repository.name }}
-      sha: ${{ github.sha }}
-      trigger_repository: ${{ github.repository }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run platform deploy-vps (prod)
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PLATFORM_DISPATCH_TOKEN }}
+          script: |
+            const contour = 'prod';
+            await github.rest.actions.createWorkflowDispatch({
+              owner: 'couragegang',
+              repo: 'platform',
+              workflow_id: 'deploy-vps.yml',
+              ref: 'main',
+              inputs: {
+                contour,
+                deploy_scope: 'single',
+                service_repo: context.repo.repo,
+                image_tag: `${context.sha}-${contour}`,
+              },
+            });
